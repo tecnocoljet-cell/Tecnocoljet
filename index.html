@@ -1210,7 +1210,7 @@
                 <div id="contentClientes" style="display: none;">
                     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; margin-bottom: 30px; color: white;">
                         <h3 style="margin: 0 0 10px 0; font-size: 24px;">👥 Gestión de Clientes</h3>
-                        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Administra los clientes, sus productos, equipos y reportes</p>
+                        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Selecciona un cliente para ver sus productos, equipos y reportes</p>
                     </div>
 
                     <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 25px;">
@@ -1232,9 +1232,16 @@
                         <button onclick="openNewClientModal()" style="padding: 14px 28px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
                             ➕ Agregar Nuevo Cliente
                         </button>
+                        <button id="btnBackToClientsList" onclick="showClientsList()" style="display: none; padding: 14px 28px; background: #f3f4f6; color: #333; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">
+                            ← Volver a lista de clientes
+                        </button>
                     </div>
 
+                    <!-- Lista de clientes -->
                     <div id="adminClientsList"></div>
+                    
+                    <!-- Detalles del cliente seleccionado -->
+                    <div id="adminClientDetails" style="display: none;"></div>
                 </div>
 
                 <!-- Tab Content: Gestión de Productos -->
@@ -4907,12 +4914,14 @@
         // ========== UI ADMIN - LISTA DE CLIENTES ==========
         async function loadClientsListAdmin() {
             const container = document.getElementById('adminClientsList');
+            const detailsContainer = document.getElementById('adminClientDetails');
+            
             container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">⏳ Cargando clientes...</div>';
+            detailsContainer.style.display = 'none';
 
-            console.log('🔍 Cargando lista de clientes con subsecciones...');
+            console.log('🔍 Cargando lista de clientes...');
             
             // Usar los clientes que ya están cargados desde Airtable
-            // Si no hay clientes, intentar cargar
             if (Object.keys(clientsData).length === 0) {
                 console.log('⚠️ No hay clientes en memoria, cargando desde Airtable...');
                 await loadClientsFromAirtable();
@@ -4932,23 +4941,70 @@
                 return;
             }
 
-            container.innerHTML = '';
+            // Mostrar lista simple de clientes
+            container.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                    ${clients.map(client => `
+                        <div 
+                            onclick="showClientDetails('${client.id}')" 
+                            style="
+                                background: white; 
+                                padding: 20px; 
+                                border-radius: 12px; 
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                                border-left: 4px solid #667eea; 
+                                cursor: pointer; 
+                                transition: all 0.3s;
+                            "
+                            onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.15)'"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'"
+                        >
+                            <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 12px;">
+                                ${client.name}
+                            </div>
+                            <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
+                                <strong>NIT:</strong> ${client.documento || 'N/A'}
+                            </div>
+                            <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
+                                <strong>Ciudad:</strong> ${client.ciudad || 'N/A'}
+                            </div>
+                            <div style="font-size: 13px; color: #666;">
+                                <strong>Teléfono:</strong> ${client.telefono || 'N/A'}
+                            </div>
+                            <div style="margin-top: 15px; font-size: 12px; color: #10b981; font-weight: 600;">
+                                👉 Click para ver detalles
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
             
-            // Crear card para cada cliente con sus 3 subsecciones
-            for (const client of clients) {
-                console.log(`✅ Creando card para cliente: ${client.name}`);
-                
-                const clientCard = document.createElement('div');
-                clientCard.style.cssText = 'background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 25px; border-left: 4px solid #667eea;';
-                
-                // Header del cliente
-                const headerHTML = `
+            console.log('✅ Lista de clientes cargada');
+        }
+
+        // Función para mostrar detalles de un cliente específico
+        async function showClientDetails(clientId) {
+            const listContainer = document.getElementById('adminClientsList');
+            const detailsContainer = document.getElementById('adminClientDetails');
+            const btnBack = document.getElementById('btnBackToClientsList');
+            
+            // Ocultar lista, mostrar detalles
+            listContainer.style.display = 'none';
+            detailsContainer.style.display = 'block';
+            btnBack.style.display = 'inline-block';
+            
+            const client = clientsData[clientId];
+            console.log(`👁️ Mostrando detalles de: ${client.name}`);
+            
+            // Header del cliente
+            detailsContainer.innerHTML = `
+                <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 25px; border-left: 4px solid #667eea;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #f0f0f0;">
                         <div style="flex: 1;">
                             <h3 style="margin: 0 0 8px 0; font-size: 22px; color: #333; font-weight: 700;">🏢 ${client.name}</h3>
                             <div style="color: #666; font-size: 14px; display: grid; gap: 4px;">
                                 <div>📄 NIT: ${client.documento || 'N/A'}</div>
-                                <div>📍 ${client.ciudad || 'Sin ciudad'} | 📞 ${client.telefono || 'Sin tel'}</div>
+                                <div>📍 ${client.ciudad || 'Sin ciudad'} | 📞 ${client.telefono || 'Sin teléfono'}</div>
                                 ${client.email ? `<div>📧 ${client.email}</div>` : ''}
                             </div>
                         </div>
@@ -4957,64 +5013,58 @@
                             <button onclick="confirmDeleteClient('${client.id}', '${client.name.replace(/'/g, "\\'")}')" style="padding: 12px 20px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3); transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">🗑️ Eliminar</button>
                         </div>
                     </div>
-                `;
-                
-                clientCard.innerHTML = headerHTML;
-                
-                // Grid para las 3 subsecciones
-                const subsectionsGrid = document.createElement('div');
-                subsectionsGrid.style.cssText = 'display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));';
-                
-                // SUBSECCIÓN 1: PRODUCTOS
-                const productsSection = document.createElement('div');
-                productsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                productsSection.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">💰 Productos</h4>
-                        <button onclick="addProductToClientDirect('${client.id}')" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
+                    
+                    <!-- Grid para las 3 subsecciones -->
+                    <div style="display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+                        <!-- PRODUCTOS -->
+                        <div style="background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">💰 Productos</h4>
+                                <button onclick="addProductToClientDirect('${client.id}')" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
+                            </div>
+                            <div id="products_${client.id}" style="min-height: 80px;">
+                                <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- EQUIPOS -->
+                        <div style="background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">🔧 Equipos</h4>
+                                <button onclick="addEquipmentToClientDirect('${client.id}')" style="padding: 6px 12px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
+                            </div>
+                            <div id="equipments_${client.id}" style="min-height: 80px;">
+                                <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- REPORTES -->
+                        <div style="background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;">
+                            <h4 style="margin: 0 0 15px 0; color: #333; font-size: 16px; font-weight: 700;">📋 Reportes</h4>
+                            <div id="reports_${client.id}" style="min-height: 80px;">
+                                <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
+                            </div>
+                        </div>
                     </div>
-                    <div id="products_${client.id}" style="min-height: 80px;">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                // SUBSECCIÓN 2: EQUIPOS
-                const equipmentsSection = document.createElement('div');
-                equipmentsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                equipmentsSection.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">🔧 Equipos</h4>
-                        <button onclick="addEquipmentToClientDirect('${client.id}')" style="padding: 6px 12px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
-                    </div>
-                    <div id="equipments_${client.id}" style="min-height: 80px;">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                // SUBSECCIÓN 3: REPORTES
-                const reportsSection = document.createElement('div');
-                reportsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                reportsSection.innerHTML = `
-                    <h4 style="margin: 0 0 15px 0; color: #333; font-size: 16px; font-weight: 700;">📋 Reportes</h4>
-                    <div id="reports_${client.id}" style="min-height: 80px;">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                subsectionsGrid.appendChild(productsSection);
-                subsectionsGrid.appendChild(equipmentsSection);
-                subsectionsGrid.appendChild(reportsSection);
-                clientCard.appendChild(subsectionsGrid);
-                container.appendChild(clientCard);
-                
-                console.log(`📦 Cargando datos inline para cliente: ${client.id}`);
-                // Cargar datos de cada subsección
-                loadClientProductsInline(client.id);
-                loadClientEquipmentsInline(client.id);
-                loadClientReportsInline(client.id);
-            }
+                </div>
+            `;
             
-            console.log('✅ Lista de clientes con subsecciones cargada completamente');
+            // Cargar datos de las 3 subsecciones
+            loadClientProductsInline(client.id);
+            loadClientEquipmentsInline(client.id);
+            loadClientReportsInline(client.id);
+        }
+        
+        // Función para volver a la lista de clientes
+        function showClientsList() {
+            const listContainer = document.getElementById('adminClientsList');
+            const detailsContainer = document.getElementById('adminClientDetails');
+            const btnBack = document.getElementById('btnBackToClientsList');
+            
+            // Mostrar lista, ocultar detalles
+            listContainer.style.display = 'block';
+            detailsContainer.style.display = 'none';
+            btnBack.style.display = 'none';
         }
 
         // Funciones para cargar datos inline en cada cliente
@@ -5225,83 +5275,57 @@
             );
 
             const container = document.getElementById('adminClientsList');
+            const detailsContainer = document.getElementById('adminClientDetails');
+            const btnBack = document.getElementById('btnBackToClientsList');
+            
+            // Asegurar que estamos en vista de lista
+            container.style.display = 'block';
+            detailsContainer.style.display = 'none';
+            btnBack.style.display = 'none';
+            
             if (filtered.length === 0) {
-                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">No se encontraron clientes</div>';
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">No se encontraron clientes con ese criterio</div>';
                 return;
             }
 
-            // Recargar con los clientes filtrados
-            container.innerHTML = '';
-            
-            for (const client of filtered) {
-                const clientCard = document.createElement('div');
-                clientCard.style.cssText = 'background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 25px; border-left: 4px solid #667eea;';
-                
-                const headerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #f0f0f0;">
-                        <div style="flex: 1;">
-                            <h3 style="margin: 0 0 8px 0; font-size: 22px; color: #333; font-weight: 700;">🏢 ${client.name}</h3>
-                            <div style="color: #666; font-size: 14px; display: grid; gap: 4px;">
-                                <div>📄 NIT: ${client.documento || 'N/A'}</div>
-                                <div>📍 ${client.ciudad || 'Sin ciudad'} | 📞 ${client.telefono || 'Sin tel'}</div>
-                                ${client.email ? `<div>📧 ${client.email}</div>` : ''}
+            // Mostrar lista simple filtrada
+            container.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                    ${filtered.map(client => `
+                        <div 
+                            onclick="showClientDetails('${client.id}')" 
+                            style="
+                                background: white; 
+                                padding: 20px; 
+                                border-radius: 12px; 
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                                border-left: 4px solid #667eea; 
+                                cursor: pointer; 
+                                transition: all 0.3s;
+                            "
+                            onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.15)'"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'"
+                        >
+                            <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 12px;">
+                                ${client.name}
+                            </div>
+                            <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
+                                <strong>NIT:</strong> ${client.documento || 'N/A'}
+                            </div>
+                            <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
+                                <strong>Ciudad:</strong> ${client.ciudad || 'N/A'}
+                            </div>
+                            <div style="font-size: 13px; color: #666;">
+                                <strong>Teléfono:</strong> ${client.telefono || 'N/A'}
+                            </div>
+                            <div style="margin-top: 15px; font-size: 12px; color: #10b981; font-weight: 600;">
+                                👉 Click para ver detalles
                             </div>
                         </div>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button onclick="editClient('${client.id}')" style="padding: 12px 20px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3); transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">✏️ Editar</button>
-                            <button onclick="confirmDeleteClient('${client.id}', '${client.name.replace(/'/g, "\\'")}')" style="padding: 12px 20px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3); transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">🗑️ Eliminar</button>
-                        </div>
-                    </div>
-                `;
-                
-                clientCard.innerHTML = headerHTML;
-                
-                const subsectionsGrid = document.createElement('div');
-                subsectionsGrid.style.cssText = 'display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));';
-                
-                const productsSection = document.createElement('div');
-                productsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                productsSection.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">💰 Productos</h4>
-                        <button onclick="addProductToClientDirect('${client.id}')" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
-                    </div>
-                    <div id="products_${client.id}">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                const equipmentsSection = document.createElement('div');
-                equipmentsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                equipmentsSection.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #333; font-size: 16px; font-weight: 700;">🔧 Equipos</h4>
-                        <button onclick="addEquipmentToClientDirect('${client.id}')" style="padding: 6px 12px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">➕</button>
-                    </div>
-                    <div id="equipments_${client.id}">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                const reportsSection = document.createElement('div');
-                reportsSection.style.cssText = 'background: #f9fafb; padding: 20px; border-radius: 10px; border: 2px solid #e5e7eb;';
-                reportsSection.innerHTML = `
-                    <h4 style="margin: 0 0 15px 0; color: #333; font-size: 16px; font-weight: 700;">📋 Reportes</h4>
-                    <div id="reports_${client.id}">
-                        <div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">⏳ Cargando...</div>
-                    </div>
-                `;
-                
-                subsectionsGrid.appendChild(productsSection);
-                subsectionsGrid.appendChild(equipmentsSection);
-                subsectionsGrid.appendChild(reportsSection);
-                clientCard.appendChild(subsectionsGrid);
-                container.appendChild(clientCard);
-                
-                loadClientProductsInline(client.id);
-                loadClientEquipmentsInline(client.id);
-                loadClientReportsInline(client.id);
-            }
+                    `).join('')}
+                </div>
+            `;
+        }
         }
 
         // ========== VISTA DE DETALLES DEL CLIENTE ==========
