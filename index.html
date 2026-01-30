@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.0.0 - Nueva estructura de clientes con vista de detalles -->
+<!-- VERSION: 2.0.1 - Funciones corregidas para evitar ReferenceError -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1603,6 +1603,13 @@
                 return false;
             }
         }
+
+        // Declaraciones adelantadas para evitar errores de referencia
+        let loadPendingReports;
+        let loadClientsListAdmin;
+        let filterAdminClientsList;
+        let showClientDetails;
+        let showClientsList;
 
         function selectRole(role) {
             console.log('🎯 selectRole llamado con:', role);
@@ -3951,7 +3958,7 @@
             }
         });
 
-        async function loadPendingReports() {
+        loadPendingReports = async function() {
             const container = document.getElementById('pendingReports');
             
             console.log('🔍 Cargando reportes pendientes...');
@@ -4913,7 +4920,7 @@
         }
 
         // ========== UI ADMIN - LISTA DE CLIENTES ==========
-        async function loadClientsListAdmin() {
+        loadClientsListAdmin = async function() {
             const container = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             
@@ -4984,7 +4991,7 @@
         }
 
         // Función para mostrar detalles de un cliente específico
-        async function showClientDetails(clientId) {
+        showClientDetails = async function(clientId) {
             const listContainer = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             const btnBack = document.getElementById('btnBackToClientsList');
@@ -5057,7 +5064,7 @@
         }
         
         // Función para volver a la lista de clientes
-        function showClientsList() {
+        showClientsList = function() {
             const listContainer = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             const btnBack = document.getElementById('btnBackToClientsList');
@@ -5268,7 +5275,7 @@
             }
         }
 
-        function filterAdminClientsList(query) {
+        filterAdminClientsList = function(query) {
             const clients = Object.values(clientsData);
             const filtered = clients.filter(c =>
                 c.name.toLowerCase().includes(query.toLowerCase()) ||
