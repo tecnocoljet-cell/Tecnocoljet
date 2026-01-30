@@ -4910,9 +4910,15 @@
             container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">⏳ Cargando clientes...</div>';
 
             console.log('🔍 Cargando lista de clientes con subsecciones...');
-            await loadClientsFromFirebase();
+            
+            // Usar los clientes que ya están cargados desde Airtable
+            // Si no hay clientes, intentar cargar
+            if (Object.keys(clientsData).length === 0) {
+                console.log('⚠️ No hay clientes en memoria, cargando desde Airtable...');
+                await loadClientsFromAirtable();
+            }
 
-            const clients = Object.values(firebaseClientsData);
+            const clients = Object.values(clientsData);
             console.log(`📊 Total de clientes: ${clients.length}`);
             
             if (clients.length === 0) {
@@ -5212,7 +5218,7 @@
         }
 
         function filterAdminClientsList(query) {
-            const clients = Object.values(firebaseClientsData);
+            const clients = Object.values(clientsData);
             const filtered = clients.filter(c =>
                 c.name.toLowerCase().includes(query.toLowerCase()) ||
                 (c.documento && c.documento.toLowerCase().includes(query.toLowerCase()))
