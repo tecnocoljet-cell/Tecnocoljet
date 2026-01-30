@@ -3347,7 +3347,7 @@
         // Load clients when page loads
         document.addEventListener('DOMContentLoaded', async function() {
             const clientSelect = document.getElementById('clientSelect');
-            clientSelect.innerHTML = '<option value="">Cargando clientes...</option>';
+            clientSelect.innerHTML = '<option value="">Cargando clientes desde Airtable...</option>';
 
             // Esperar a que Firebase esté listo
             let attempts = 0;
@@ -3356,22 +3356,40 @@
                 attempts++;
             }
 
-            // Primero intentar cargar desde Firebase
+            // 🔄 CARGAR DESDE AIRTABLE
+            console.log('🚀 Cargando datos desde Airtable para Reportes...');
+            
             let success = false;
             try {
-                success = await loadClientsFromFirebase();
+                // Cargar clientes desde Airtable
+                success = await loadClientsFromAirtable();
                 if (success && Object.keys(firebaseClientsData).length > 0) {
-                    console.log('Clientes cargados desde Firebase');
+                    console.log('✅ Clientes cargados desde Airtable');
                 }
             } catch (err) {
-                console.log('Firebase: sin clientes todavía');
+                console.error('❌ Error cargando clientes desde Airtable:', err);
+                // Fallback: intentar Firebase
+                try {
+                    success = await loadClientsFromFirebase();
+                    if (success && Object.keys(firebaseClientsData).length > 0) {
+                        console.log('✅ Clientes cargados desde Firebase (fallback)');
+                    }
+                } catch (err2) {
+                    console.log('❌ Firebase: sin clientes');
+                }
             }
 
-            // Cargar productos desde Firebase también
+            // Cargar productos desde Airtable también
             try {
-                await loadProductsFromFirebase();
+                await loadProductsFromAirtable();
+                console.log('✅ Productos cargados desde Airtable');
             } catch (err) {
-                console.log('Firebase: sin productos todavía');
+                console.log('⚠️ Error cargando productos desde Airtable, intentando Firebase...');
+                try {
+                    await loadProductsFromFirebase();
+                } catch (err2) {
+                    console.log('❌ Firebase: sin productos');
+                }
             }
 
             // Llenar el selector de clientes
@@ -3385,9 +3403,9 @@
                     clientSelect.appendChild(option);
                 });
 
-                console.log('Clientes en el selector:', Object.keys(clientsData).length);
+                console.log('✅ Selector de clientes listo:', Object.keys(clientsData).length, 'clientes');
             } else {
-                clientSelect.innerHTML = '<option value="">No hay clientes - Agrega en Admin</option>';
+                clientSelect.innerHTML = '<option value="">No hay clientes en Airtable</option>';
             }
 
             // Add Enter key support for admin password
