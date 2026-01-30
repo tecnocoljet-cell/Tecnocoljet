@@ -2001,7 +2001,7 @@
         // ===== ADMIN REMISIONES FUNCTIONS =====
         let remisionProductosCount = 0;
         
-        function searchClientsForRemision(query) {
+        async function searchClientsForRemision(query) {
             const resultsDiv = document.getElementById('remisionClientResults');
             
             console.log('🔍 Buscando cliente:', query);
@@ -2013,28 +2013,30 @@
                 return;
             }
             
-            // Verificar si los datos están cargados
-            const totalClients = Object.keys(clientsData).length;
-            
-            if (totalClients === 0) {
+            // Si no hay clientes cargados, cargarlos ahora
+            if (Object.keys(clientsData).length === 0) {
                 resultsDiv.innerHTML = `
-                    <div style="padding: 20px; color: #ef4444; text-align: center; background: #fef2f2; border-radius: 8px; margin-top: 5px;">
-                        <div style="font-size: 32px; margin-bottom: 10px;">⚠️</div>
-                        <strong>No hay clientes cargados</strong><br>
-                        <small style="display: block; margin-top: 8px; color: #666;">
-                            Los clientes se cargan automáticamente desde Airtable.<br>
-                            Espera unos segundos y vuelve a intentar.
-                        </small>
+                    <div style="padding: 15px; color: #f97316; text-align: center; background: #fff7ed; border-radius: 6px; margin-top: 5px;">
+                        <strong>⏳ Cargando clientes desde Airtable...</strong><br>
+                        <small>Por favor espera un momento</small>
                     </div>
                 `;
                 resultsDiv.style.display = 'block';
                 
-                // Intentar cargar ahora
-                console.log('⚠️ Intentando cargar clientes ahora...');
-                loadClientsFromAirtable().then(() => {
-                    console.log('✅ Clientes cargados:', Object.keys(clientsData).length);
-                });
-                return;
+                console.log('🔄 Cargando clientes desde Airtable...');
+                await loadClientsFromAirtable();
+                
+                console.log('✅ Clientes cargados, total:', Object.keys(clientsData).length);
+                
+                if (Object.keys(clientsData).length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div style="padding: 15px; color: #ef4444; text-align: center; background: #fef2f2; border-radius: 6px; margin-top: 5px;">
+                            <strong>⚠️ No se pudieron cargar clientes</strong><br>
+                            <small>Verifica tu conexión a Airtable</small>
+                        </div>
+                    `;
+                    return;
+                }
             }
             
             const filtered = Object.values(clientsData).filter(client => 
@@ -2045,11 +2047,7 @@
             console.log('✅ Clientes filtrados:', filtered.length);
             
             if (filtered.length === 0) {
-                resultsDiv.innerHTML = `
-                    <div style="padding: 15px; color: #666; text-align: center; background: #f9fafb; border-radius: 8px; margin-top: 5px;">
-                        No se encontraron clientes con "${query}"
-                    </div>
-                `;
+                resultsDiv.innerHTML = '<div style="padding: 15px; color: #666; text-align: center;">No se encontraron clientes con ese criterio</div>';
                 resultsDiv.style.display = 'block';
                 return;
             }
