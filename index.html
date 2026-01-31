@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.0.1 - Funciones corregidas para evitar ReferenceError -->
+<!-- VERSION: 2.1.0 - Funciones asignadas a window para acceso global -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1603,13 +1603,6 @@
                 return false;
             }
         }
-
-        // Declaraciones adelantadas para evitar errores de referencia
-        let loadPendingReports;
-        let loadClientsListAdmin;
-        let filterAdminClientsList;
-        let showClientDetails;
-        let showClientsList;
 
         function selectRole(role) {
             console.log('🎯 selectRole llamado con:', role);
@@ -3958,7 +3951,7 @@
             }
         });
 
-        loadPendingReports = async function() {
+        async function loadPendingReports() {
             const container = document.getElementById('pendingReports');
             
             console.log('🔍 Cargando reportes pendientes...');
@@ -4104,6 +4097,7 @@
                 `;
             }
         }
+        window.loadPendingReports = loadPendingReports;
 
         // PDF Generation Function - IMPROVED
         async function generateReportPDF(reportId) {
@@ -4920,7 +4914,7 @@
         }
 
         // ========== UI ADMIN - LISTA DE CLIENTES ==========
-        loadClientsListAdmin = async function() {
+        async function loadClientsListAdmin() {
             const container = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             
@@ -4989,9 +4983,10 @@
             
             console.log('✅ Lista de clientes cargada');
         }
+        window.loadClientsListAdmin = loadClientsListAdmin;
 
         // Función para mostrar detalles de un cliente específico
-        showClientDetails = async function(clientId) {
+        async function showClientDetails(clientId) {
             const listContainer = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             const btnBack = document.getElementById('btnBackToClientsList');
@@ -5062,9 +5057,10 @@
             loadClientEquipmentsInline(client.id);
             loadClientReportsInline(client.id);
         }
+        window.showClientDetails = showClientDetails;
         
         // Función para volver a la lista de clientes
-        showClientsList = function() {
+        function showClientsList() {
             const listContainer = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             const btnBack = document.getElementById('btnBackToClientsList');
@@ -5074,6 +5070,7 @@
             detailsContainer.style.display = 'none';
             btnBack.style.display = 'none';
         }
+        window.showClientsList = showClientsList;
 
         // Funciones para cargar datos inline en cada cliente
         async function loadClientProductsInline(clientId) {
@@ -5275,7 +5272,7 @@
             }
         }
 
-        filterAdminClientsList = function(query) {
+        function filterAdminClientsList(query) {
             const clients = Object.values(clientsData);
             const filtered = clients.filter(c =>
                 c.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -5334,7 +5331,7 @@
                 </div>
             `;
         }
-        }
+        window.filterAdminClientsList = filterAdminClientsList;
 
         // ========== VISTA DE DETALLES DEL CLIENTE ==========
         let currentClientId = null;
