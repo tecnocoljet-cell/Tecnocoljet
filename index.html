@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.4.0 - Generación automática de Excel con formato TECNOCOLJET -->
+<!-- VERSION: 2.5.0 - Campos completos de remisión + corrección de reportes -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1156,12 +1156,77 @@
                                 <input 
                                     type="text" 
                                     id="remisionNumero" 
-                                    placeholder="Ej: REM-2025-001" 
+                                    placeholder="Ej: 12797" 
                                     required
                                     style="width: 100%; padding: 14px 20px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; transition: all 0.3s;"
                                     onfocus="this.style.borderColor='#10b981'"
                                     onblur="this.style.borderColor='#e0e0e0'"
                                 >
+                            </div>
+                            
+                            <!-- Responsable de Entrega -->
+                            <div style="margin-bottom: 25px;">
+                                <label style="display: block; font-weight: 600; color: #333; margin-bottom: 12px; font-size: 16px;">
+                                    🚚 Responsable de Entrega
+                                </label>
+                                <input 
+                                    type="text" 
+                                    id="remisionResponsableEntrega" 
+                                    placeholder="Nombre de quien entregará" 
+                                    style="width: 100%; padding: 14px 20px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; transition: all 0.3s;"
+                                    onfocus="this.style.borderColor='#10b981'"
+                                    onblur="this.style.borderColor='#e0e0e0'"
+                                >
+                            </div>
+                            
+                            <!-- Forma de Pago -->
+                            <div style="margin-bottom: 25px;">
+                                <label style="display: block; font-weight: 600; color: #333; margin-bottom: 12px; font-size: 16px;">
+                                    💳 Forma de Pago
+                                </label>
+                                <select 
+                                    id="remisionFormaPago"
+                                    style="width: 100%; padding: 14px 20px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; transition: all 0.3s;"
+                                    onfocus="this.style.borderColor='#10b981'"
+                                    onblur="this.style.borderColor='#e0e0e0'"
+                                >
+                                    <option value="">Seleccionar...</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                    <option value="Transferencia">Transferencia</option>
+                                    <option value="Cheque">Cheque</option>
+                                    <option value="Crédito">Crédito</option>
+                                    <option value="Contado">Contado</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Factura Electrónica -->
+                            <div style="margin-bottom: 25px;">
+                                <label style="display: block; font-weight: 600; color: #333; margin-bottom: 12px; font-size: 16px;">
+                                    🧾 Número de Factura Electrónica
+                                </label>
+                                <input 
+                                    type="text" 
+                                    id="remisionFactura" 
+                                    placeholder="Ej: FE-2025-001" 
+                                    style="width: 100%; padding: 14px 20px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; transition: all 0.3s;"
+                                    onfocus="this.style.borderColor='#10b981'"
+                                    onblur="this.style.borderColor='#e0e0e0'"
+                                >
+                            </div>
+                            
+                            <!-- Observaciones -->
+                            <div style="margin-bottom: 25px;">
+                                <label style="display: block; font-weight: 600; color: #333; margin-bottom: 12px; font-size: 16px;">
+                                    📝 Observaciones
+                                </label>
+                                <textarea 
+                                    id="remisionObservaciones" 
+                                    placeholder="Notas adicionales sobre la remisión..."
+                                    rows="3"
+                                    style="width: 100%; padding: 14px 20px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; transition: all 0.3s; resize: vertical;"
+                                    onfocus="this.style.borderColor='#10b981'"
+                                    onblur="this.style.borderColor='#e0e0e0'"
+                                ></textarea>
                             </div>
                             
                             <!-- Productos Section -->
@@ -2331,6 +2396,10 @@
             try {
                 const numero = document.getElementById('remisionNumero').value.trim();
                 const creator = document.getElementById('remisionCreator').value.trim();
+                const responsableEntrega = document.getElementById('remisionResponsableEntrega').value.trim();
+                const formaPago = document.getElementById('remisionFormaPago').value;
+                const facturaElectronica = document.getElementById('remisionFactura').value.trim();
+                const observaciones = document.getElementById('remisionObservaciones').value.trim();
                 const clientId = document.getElementById('remisionSelectedClientId').value;
                 
                 if (!clientId) {
@@ -2375,6 +2444,10 @@
                 const remisionData = {
                     numero: numero,
                     creator: creator,
+                    responsableEntrega: responsableEntrega || '',
+                    formaPago: formaPago || '',
+                    facturaElectronica: facturaElectronica || '',
+                    observaciones: observaciones || '',
                     clientId: clientId,
                     clientName: client.name,
                     productos: productosRemision,
@@ -2394,10 +2467,14 @@
                     'Código de remisión': parseInt(numero),
                     'Cliente': [client.airtableId],
                     'Responsable de la remisión': creator,
+                    'Responsable de entrega': responsableEntrega,
                     'Productos remisionados': productosTexto,
                     'Precio de venta': precioTotal,
                     'Estado': 'Pendiente',
-                    'Fecha de entrega': new Date().toISOString().split('T')[0]
+                    'Fecha de entrega': new Date().toISOString().split('T')[0],
+                    'Factura electrónica': facturaElectronica,
+                    'Forma de pago': formaPago,
+                    'Observaciones': observaciones
                 };
                 
                 const airtableResponse = await fetch(
@@ -5589,14 +5666,22 @@
             const container = document.getElementById(`reports_${clientId}`);
             
             try {
+                const client = clientsData[clientId] || firebaseClientsData[clientId];
+                if (!client) {
+                    container.innerHTML = '<div style="text-align: center; padding: 15px; color: #999; font-size: 13px;">Cliente no encontrado</div>';
+                    return;
+                }
+                
+                // Buscar por nombre de cliente ya que así se guardan en reports
                 const snapshot = await window.db.collection('reports')
-                    .where('clientId', '==', clientId)
+                    .where('clientName', '==', client.name)
+                    .where('status', '==', 'approved')
                     .orderBy('createdAt', 'desc')
                     .limit(5)
                     .get();
                 
                 if (snapshot.empty) {
-                    container.innerHTML = '<div style="text-align: center; padding: 15px; color: #999; font-size: 13px;">Sin reportes</div>';
+                    container.innerHTML = '<div style="text-align: center; padding: 15px; color: #999; font-size: 13px;">Sin reportes aprobados</div>';
                     return;
                 }
                 
@@ -5607,11 +5692,16 @@
                     html += `
                         <div style="background: white; padding: 10px; border-radius: 6px; font-size: 13px; border-left: 3px solid #3b82f6;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                <span style="font-weight: 600; color: #333;">${report.reportType || 'Reporte'}</span>
+                                <span style="font-weight: 600; color: #333;">${report.serviceType || 'Reporte'}</span>
                                 <span style="color: #999; font-size: 11px;">📅 ${fecha}</span>
                             </div>
-                            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${(report.issueDescription || '').substring(0, 60)}...</div>
+                            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">
+                                ${report.technician ? `👤 ${report.technician}` : ''}
+                            </div>
                             ${report.equipmentNumber ? `<div style="color: #8b5cf6; font-size: 11px; font-weight: 600;">🔧 Equipo #${report.equipmentNumber}</div>` : ''}
+                            <button onclick="viewReportDetails('${doc.id}')" style="margin-top: 6px; padding: 4px 8px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
+                                👁️ Ver detalles
+                            </button>
                         </div>
                     `;
                 });
@@ -5619,7 +5709,8 @@
                 container.innerHTML = html;
                 
             } catch (error) {
-                container.innerHTML = '<div style="text-align: center; padding: 15px; color: #ef4444; font-size: 13px;">Error</div>';
+                console.error('Error cargando reportes:', error);
+                container.innerHTML = '<div style="text-align: center; padding: 15px; color: #ef4444; font-size: 13px;">Error: ' + error.message + '</div>';
             }
         }
         
