@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.1.0 - Funciones asignadas a window para acceso global -->
+<!-- VERSION: 2.3.0 - Sistema completo de remisiones con auto-numeración y eliminación -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1107,7 +1107,7 @@
                     <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
                         <h4 style="color: #333; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">📝 Nueva Remisión</h4>
                         
-                        <form id="remisionForm">
+                        <form id="remisionForm" onsubmit="createRemision(event)">
                             <!-- Responsable de Entrega Section -->
                             <div style="margin-bottom: 25px;">
                                 <label style="display: block; font-weight: 600; color: #333; margin-bottom: 12px; font-size: 16px;">
@@ -2222,6 +2222,48 @@
             document.getElementById(`producto-${id}`).remove();
         }
         
+        // Cargar el siguiente número de remisión desde Airtable
+        async function loadNextRemisionNumber() {
+            const inputNumero = document.getElementById('remisionNumero');
+            
+            try {
+                console.log('🔢 Cargando último número de remisión desde Airtable...');
+                
+                // Obtener todos los registros ordenados por "Código de remisión" descendente
+                const response = await fetch(
+                    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLES.remisiones}?sort[0][field]=Código de remisión&sort[0][direction]=desc&maxRecords=1`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${AIRTABLE_TOKEN}`
+                        }
+                    }
+                );
+                
+                const data = await response.json();
+                
+                if (data.records && data.records.length > 0) {
+                    const lastNumero = data.records[0].fields['Código de remisión'];
+                    console.log('✅ Último número encontrado:', lastNumero);
+                    
+                    // Incrementar el número
+                    const nextNumero = parseInt(lastNumero) + 1;
+                    inputNumero.value = nextNumero;
+                    inputNumero.placeholder = `Siguiente: ${nextNumero}`;
+                    
+                    console.log('✅ Siguiente número sugerido:', nextNumero);
+                } else {
+                    // No hay remisiones, empezar en 1
+                    inputNumero.value = 1;
+                    inputNumero.placeholder = 'Primera remisión: 1';
+                    console.log('ℹ️ No hay remisiones previas, iniciando en 1');
+                }
+            } catch (error) {
+                console.error('❌ Error cargando número de remisión:', error);
+                inputNumero.placeholder = 'Ingresa el número manualmente';
+            }
+        }
+        window.loadNextRemisionNumber = loadNextRemisionNumber;
+        
         async function loadCreatedRemisiones() {
             const container = document.getElementById('remisionesCreadas');
             container.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">⏳ Cargando...</p>';
@@ -2237,19 +2279,29 @@
                 container.innerHTML = '';
                 querySnapshot.forEach(doc => {
                     const remision = doc.data();
+                    const remisionId = doc.id;
                     const card = document.createElement('div');
                     card.className = 'report-card';
                     card.innerHTML = `
-                        <div style="display: flex; justify-content: space-between;">
-                            <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="flex: 1;">
                                 <strong>Remisión #${remision.numero}</strong><br>
                                 <span style="color: #666;">${remision.clientName}</span><br>
                                 <span style="font-size: 12px; color: ${remision.status === 'pending' ? '#f59e0b' : remision.status === 'delivered' ? '#10b981' : '#ef4444'};">
                                     ${remision.status === 'pending' ? '⏳ Pendiente' : remision.status === 'delivered' ? '✅ Entregado' : '❌ No entregado'}
-                                </span>
+                                </span><br>
+                                <small style="color: #999;">${remision.createdAt?.toDate().toLocaleDateString('es-CO')}</small>
                             </div>
-                            <div>
-                                <small>${remision.createdAt?.toDate().toLocaleDateString('es-CO')}</small>
+                            <div style="display: flex; gap: 10px; flex-direction: column;">
+                                <button onclick="viewRemisionDetails('${remisionId}')" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                                    👁️ Ver Detalles
+                                </button>
+                                <button onclick="downloadRemisionExcel('${remisionId}')" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                                    📥 Descargar Excel
+                                </button>
+                                <button onclick="deleteRemision('${remisionId}', '${remision.airtableId || ''}')" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                                    🗑️ Eliminar
+                                </button>
                             </div>
                         </div>
                     `;
@@ -2260,6 +2312,238 @@
                 container.innerHTML = '<p style="text-align: center; padding: 20px; color: #ef4444;">Error al cargar</p>';
             }
         }
+        
+        // Función para crear remisión
+        async function createRemision(event) {
+            event.preventDefault();
+            
+            const btnSubmit = event.target.querySelector('button[type="submit"]');
+            const originalText = btnSubmit.innerHTML;
+            
+            // Deshabilitar botón para evitar doble envío
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = '⏳ Creando...';
+            btnSubmit.style.opacity = '0.6';
+            
+            try {
+                const numero = document.getElementById('remisionNumero').value.trim();
+                const creator = document.getElementById('remisionCreator').value.trim();
+                const clientId = document.getElementById('remisionSelectedClientId').value;
+                
+                if (!clientId) {
+                    alert('⚠️ Por favor selecciona un cliente');
+                    return;
+                }
+                
+                const client = clientsData[clientId];
+                
+                // Recopilar productos
+                const productosRemision = [];
+                document.querySelectorAll('[id^="producto-"]').forEach(prodDiv => {
+                    const select = prodDiv.querySelector('select');
+                    const inputCantidad = prodDiv.querySelector('input[type="number"]');
+                    
+                    if (select && select.value && inputCantidad && inputCantidad.value) {
+                        const producto = firebaseProductsData.find(p => p.id === select.value);
+                        if (producto) {
+                            productosRemision.push({
+                                productoId: select.value,
+                                codigo: producto.codigo,
+                                nombre: producto.nombre,
+                                cantidad: parseInt(inputCantidad.value),
+                                unidad: producto.unidad || 'UND',
+                                precioUnitario: producto.precioBase || 0
+                            });
+                        }
+                    }
+                });
+                
+                if (productosRemision.length === 0) {
+                    alert('⚠️ Debes agregar al menos un producto');
+                    return;
+                }
+                
+                // Calcular precio total
+                const precioTotal = productosRemision.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
+                
+                // Crear string de productos para Airtable
+                const productosTexto = productosRemision.map(p => `${p.cantidad} ${p.codigo}`).join(', ');
+                
+                const remisionData = {
+                    numero: numero,
+                    creator: creator,
+                    clientId: clientId,
+                    clientName: client.name,
+                    productos: productosRemision,
+                    precioTotal: precioTotal,
+                    status: 'pending',
+                    createdAt: firebase.firestore.Timestamp.now()
+                };
+                
+                console.log('📦 Creando remisión:', remisionData);
+                
+                // Guardar en Firebase
+                const docRef = await window.db.collection('remisiones').add(remisionData);
+                console.log('✅ Remisión guardada en Firebase:', docRef.id);
+                
+                // Guardar en Airtable
+                const airtableData = {
+                    'Código de remisión': parseInt(numero),
+                    'Cliente': [client.airtableId],
+                    'Responsable de la remisión': creator,
+                    'Productos remisionados': productosTexto,
+                    'Precio de venta': precioTotal,
+                    'Estado': 'Pendiente',
+                    'Fecha de entrega': new Date().toISOString().split('T')[0]
+                };
+                
+                const airtableResponse = await fetch(
+                    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLES.remisiones}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${AIRTABLE_TOKEN}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            fields: airtableData
+                        })
+                    }
+                );
+                
+                const airtableResult = await airtableResponse.json();
+                console.log('✅ Remisión guardada en Airtable:', airtableResult.id);
+                
+                // Actualizar Firebase con el ID de Airtable
+                await docRef.update({ airtableId: airtableResult.id });
+                
+                alert(`✅ Remisión #${numero} creada exitosamente`);
+                
+                // Limpiar formulario
+                document.getElementById('remisionForm').reset();
+                document.getElementById('remisionSelectedClient').innerHTML = '';
+                document.getElementById('remisionProductos').innerHTML = '';
+                
+                // Recargar lista
+                await loadCreatedRemisiones();
+                await loadNextRemisionNumber();
+                
+                // Generar Excel automáticamente
+                await downloadRemisionExcel(docRef.id);
+                
+            } catch (error) {
+                console.error('❌ Error creando remisión:', error);
+                alert('❌ Error al crear remisión: ' + error.message);
+            } finally {
+                // Rehabilitar botón
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = originalText;
+                btnSubmit.style.opacity = '1';
+            }
+        }
+        window.createRemision = createRemision;
+        
+        // Función para eliminar remisión
+        async function deleteRemision(firebaseId, airtableId) {
+            if (!confirm('¿Estás seguro de eliminar esta remisión? Se eliminará tanto de Firebase como de Airtable.')) {
+                return;
+            }
+            
+            try {
+                console.log('🗑️ Eliminando remisión:', firebaseId, airtableId);
+                
+                // Eliminar de Firebase
+                await window.db.collection('remisiones').doc(firebaseId).delete();
+                console.log('✅ Eliminada de Firebase');
+                
+                // Eliminar de Airtable si existe el ID
+                if (airtableId) {
+                    const response = await fetch(
+                        `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLES.remisiones}/${airtableId}`,
+                        {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${AIRTABLE_TOKEN}`
+                            }
+                        }
+                    );
+                    
+                    if (response.ok) {
+                        console.log('✅ Eliminada de Airtable');
+                    }
+                }
+                
+                alert('✅ Remisión eliminada exitosamente');
+                await loadCreatedRemisiones();
+                
+            } catch (error) {
+                console.error('❌ Error eliminando remisión:', error);
+                alert('❌ Error al eliminar: ' + error.message);
+            }
+        }
+        window.deleteRemision = deleteRemision;
+        
+        // Función para ver detalles de remisión
+        async function viewRemisionDetails(remisionId) {
+            try {
+                const doc = await window.db.collection('remisiones').doc(remisionId).get();
+                if (!doc.exists) {
+                    alert('❌ Remisión no encontrada');
+                    return;
+                }
+                
+                const remision = doc.data();
+                const productos = remision.productos || [];
+                
+                let detalles = `📦 REMISIÓN #${remision.numero}\n\n`;
+                detalles += `🏢 Cliente: ${remision.clientName}\n`;
+                detalles += `👤 Creado por: ${remision.creator}\n`;
+                detalles += `📅 Fecha: ${remision.createdAt?.toDate().toLocaleDateString('es-CO')}\n`;
+                detalles += `📊 Estado: ${remision.status === 'pending' ? '⏳ Pendiente' : remision.status === 'delivered' ? '✅ Entregado' : '❌ No entregado'}\n`;
+                detalles += `💰 Total: $${remision.precioTotal?.toLocaleString('es-CO') || 0}\n\n`;
+                detalles += `📝 PRODUCTOS:\n`;
+                detalles += `${'─'.repeat(40)}\n`;
+                
+                productos.forEach((p, i) => {
+                    detalles += `${i + 1}. ${p.nombre} (${p.codigo})\n`;
+                    detalles += `   Cantidad: ${p.cantidad} ${p.unidad}\n`;
+                    detalles += `   Precio Unit: $${p.precioUnitario?.toLocaleString('es-CO') || 0}\n`;
+                    detalles += `   Subtotal: $${((p.cantidad * p.precioUnitario) || 0).toLocaleString('es-CO')}\n\n`;
+                });
+                
+                alert(detalles);
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                alert('❌ Error al cargar detalles: ' + error.message);
+            }
+        }
+        window.viewRemisionDetails = viewRemisionDetails;
+        
+        // Función para descargar Excel de remisión
+        async function downloadRemisionExcel(remisionId) {
+            try {
+                const doc = await window.db.collection('remisiones').doc(remisionId).get();
+                if (!doc.exists) {
+                    alert('❌ Remisión no encontrada');
+                    return;
+                }
+                
+                const remision = doc.data();
+                
+                // Por ahora, mostrar mensaje de que se implementará
+                alert(`📥 Generando Excel para Remisión #${remision.numero}...\n\n` +
+                      `Esta funcionalidad generará un archivo Excel con el formato específico.\n\n` +
+                      `¿Podrías compartir el formato de Excel que necesitas para implementarlo?`);
+                
+                // TODO: Implementar generación de Excel con el formato específico
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                alert('❌ Error al generar Excel: ' + error.message);
+            }
+        }
+        window.downloadRemisionExcel = downloadRemisionExcel;
 
         function initSignatureCanvas() {
             console.log('🎨 Inicializando canvas de firma...');
@@ -2871,6 +3155,7 @@
                 tabRemisiones.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
                 document.getElementById('contentRemisiones').style.display = 'block';
                 loadCreatedRemisiones();
+                loadNextRemisionNumber(); // Cargar siguiente número
                 
                 // 🔄 Asegurar que clientes y productos estén cargados
                 if (Object.keys(clientsData).length === 0) {
@@ -5189,6 +5474,7 @@
             selectedClientNameForPrices = client.name;
             await openClientPricesModal();
         }
+        window.addProductToClientDirect = addProductToClientDirect;
         
         async function addEquipmentToClientDirect(clientId) {
             const client = firebaseClientsData[clientId];
@@ -5223,6 +5509,7 @@
                 alert('❌ Error al agregar equipo: ' + error.message);
             }
         }
+        window.addEquipmentToClientDirect = addEquipmentToClientDirect;
         
         async function viewEquipmentReports(equipmentId, equipmentNumber) {
             try {
@@ -5258,6 +5545,7 @@
                 alert('❌ Error al cargar historial: ' + error.message);
             }
         }
+        window.viewEquipmentReports = viewEquipmentReports;
         
         async function deleteEquipment(equipmentId, clientId) {
             if (!confirm('¿Eliminar este equipo?')) return;
@@ -5271,6 +5559,7 @@
                 alert('❌ Error al eliminar: ' + error.message);
             }
         }
+        window.deleteEquipment = deleteEquipment;
 
         function filterAdminClientsList(query) {
             const clients = Object.values(clientsData);
@@ -5425,6 +5714,7 @@
             document.getElementById('clientDireccion').value = client.direccion || '';
             document.getElementById('clientModal').style.display = 'flex';
         }
+        window.editClient = editClient;
 
         async function saveClientForm() {
             const clientId = document.getElementById('editClientId').value;
@@ -5466,6 +5756,7 @@
                 alert('Error al eliminar: ' + error.message);
             }
         }
+        window.confirmDeleteClient = confirmDeleteClient;
 
         // ========== MODALES PRODUCTOS ==========
         function openNewProductModal() {
