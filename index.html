@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.3.0 - Sistema completo de remisiones con auto-numeración y eliminación -->
+<!-- VERSION: 2.4.0 - Generación automática de Excel con formato TECNOCOLJET -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -527,6 +527,9 @@
             }
         }
     </style>
+    
+    <!-- SheetJS para generar archivos Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -2530,13 +2533,167 @@
                 }
                 
                 const remision = doc.data();
+                const productos = remision.productos || [];
                 
-                // Por ahora, mostrar mensaje de que se implementará
-                alert(`📥 Generando Excel para Remisión #${remision.numero}...\n\n` +
-                      `Esta funcionalidad generará un archivo Excel con el formato específico.\n\n` +
-                      `¿Podrías compartir el formato de Excel que necesitas para implementarlo?`);
+                // Obtener datos del cliente
+                const client = clientsData[remision.clientId] || {};
                 
-                // TODO: Implementar generación de Excel con el formato específico
+                console.log('📊 Generando Excel para remisión #' + remision.numero);
+                
+                // Crear un nuevo workbook
+                const wb = XLSX.utils.book_new();
+                
+                // Crear array de datos para el formato
+                const data = [];
+                
+                // Filas vacías iniciales (0-3)
+                for (let i = 0; i < 4; i++) {
+                    data.push([]);
+                }
+                
+                // Fila 4: REMISION
+                data.push(['', '', 'REMISION']);
+                
+                // Fila 5: Número de remisión
+                data.push(['', '', remision.numero]);
+                
+                // Fila 6: Vacía
+                data.push([]);
+                
+                // Filas 7-8: Vacías
+                data.push([]);
+                data.push([]);
+                
+                // Fila 9: Razón Social
+                data.push(['Razon social', client.razonSocial || client.name || '']);
+                
+                // Fila 10: Dirección
+                data.push(['Direccion', client.direccion || '']);
+                
+                // Fila 11: Teléfono
+                data.push(['Telefono', client.telefono || '']);
+                
+                // Fila 12: NIT y Fecha
+                const today = new Date();
+                const excelDate = Math.floor((today - new Date(1899, 11, 30)) / (24 * 60 * 60 * 1000));
+                data.push(['Nit', client.documento || '', '', '', 'F.Remision', '', '', excelDate]);
+                
+                // Fila 13: Ciudad
+                data.push(['Ciudad', client.ciudad || '']);
+                
+                // Filas 14-18: Vacías (con algunos detalles)
+                data.push([]);
+                data.push([]);
+                data.push(['', '', '', '', '', '', '', 'nit 900283540-4']);
+                data.push(['', '', '', '', 'REGIMEN COMUN']);
+                data.push([]);
+                
+                // Fila 19: Encabezados de productos
+                data.push(['CODIGO', 'BODEGA', 'DESCRIPCION', 'LOTE', 'CANTIDAD', '', '', 'V/ UNIT', 'V/TOTAL']);
+                
+                // Filas 20-29: Productos (dinámico)
+                let startRow = 20;
+                productos.forEach((prod, idx) => {
+                    const rowIdx = startRow + idx;
+                    const subtotal = prod.cantidad * prod.precioUnitario;
+                    data.push([
+                        prod.codigo,           // CODIGO
+                        1,                     // BODEGA (siempre 1)
+                        prod.nombre,           // DESCRIPCION
+                        '',                    // LOTE (vacío)
+                        prod.cantidad,         // CANTIDAD
+                        '',
+                        '',
+                        prod.precioUnitario,   // V/ UNIT
+                        subtotal               // V/TOTAL (fórmula será: cantidad * precio)
+                    ]);
+                });
+                
+                // Completar hasta fila 29 si hay menos de 10 productos
+                const numProductos = productos.length;
+                for (let i = numProductos; i < 10; i++) {
+                    data.push([]);
+                }
+                
+                // Calcular totales
+                const totalProductos = productos.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
+                const descuentos = 0;
+                const subtotal = totalProductos - descuentos;
+                const iva = subtotal * 0.19; // IVA del 19%
+                const totalConIva = subtotal + iva;
+                const totalFacturado = totalConIva;
+                
+                // Fila 29: TOTAL PRODUCTOS (después de todos los productos)
+                const totalRow = startRow + Math.max(numProductos, 10);
+                while (data.length < totalRow) {
+                    data.push([]);
+                }
+                data.push(['', '', '', '', 'TOTAL PRODUCTOS', '', '', '', totalProductos]);
+                
+                // Filas 30-39: Resumen financiero
+                data.push(['', '', '', '', 'DESCUENTOS', '', '', '', descuentos]);
+                data.push(['', '', '', '', 'DESCUENTOS PROMO', '', '', '', 0]);
+                data.push(['', '', '', '', 'OTROS DESCUENTOS', '', '', '', 0]);
+                data.push(['', '', '', '', 'SUBTOTAL', '', '', '', subtotal]);
+                data.push(['', '', '', '', 'IVA', '', '', '', iva]);
+                data.push(['', '', '', '', 'TOTAL CON IVA', '', '', '', totalConIva]);
+                data.push(['', '', '', '', 'RTE FUENTE', '', '', '', 0]);
+                data.push(['O. DE COMPRA', '', '', '', 'RTE IVA', '', '', '', 0]);
+                data.push(['', '', '', '', 'RTE ICA', '', '', '', 0]);
+                data.push(['', '', '', '', 'TOTAL FACTURADO', '', '', '', totalFacturado]);
+                
+                // Crear worksheet desde el array
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                
+                // Configurar anchos de columna
+                ws['!cols'] = [
+                    { wch: 12 },  // A - CODIGO
+                    { wch: 8 },   // B - BODEGA
+                    { wch: 30 },  // C - DESCRIPCION
+                    { wch: 8 },   // D - LOTE
+                    { wch: 10 },  // E - CANTIDAD
+                    { wch: 8 },   // F
+                    { wch: 8 },   // G
+                    { wch: 12 },  // H - V/ UNIT
+                    { wch: 15 }   // I - V/TOTAL
+                ];
+                
+                // Formato de números con separadores de miles
+                const numFmt = '#,##0';
+                const moneyFmt = '$#,##0';
+                
+                // Aplicar formato a celdas de dinero
+                productos.forEach((prod, idx) => {
+                    const rowNum = startRow + idx + 1; // +1 porque Excel es 1-indexed
+                    const cellH = `H${rowNum}`; // V/ UNIT
+                    const cellI = `I${rowNum}`; // V/TOTAL
+                    
+                    if (ws[cellH]) ws[cellH].z = moneyFmt;
+                    if (ws[cellI]) ws[cellI].z = moneyFmt;
+                });
+                
+                // Aplicar formato a totales
+                const totalRowNum = totalRow + 1;
+                for (let i = 0; i < 11; i++) {
+                    const cellRef = `I${totalRowNum + i}`;
+                    if (ws[cellRef]) ws[cellRef].z = moneyFmt;
+                }
+                
+                // Formato de fecha en F.Remision (H12 en Excel = fila 12, col 7)
+                const dateCell = 'H13';
+                if (ws[dateCell]) {
+                    ws[dateCell].t = 'n';
+                    ws[dateCell].z = 'dd/mm/yyyy';
+                }
+                
+                // Agregar worksheet al workbook
+                XLSX.utils.book_append_sheet(wb, ws, 'Remisión');
+                
+                // Generar archivo y descargarlo
+                const filename = `REMISION_${remision.clientName}_${remision.numero}.xlsx`;
+                XLSX.writeFile(wb, filename);
+                
+                console.log('✅ Excel generado:', filename);
                 
             } catch (error) {
                 console.error('❌ Error:', error);
