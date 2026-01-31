@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.5.0 - Campos completos de remisión + corrección de reportes -->
+<!-- VERSION: 2.6.0 - Fechas corregidas, IVA incluido, Excel mejorado -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1976,7 +1976,7 @@
                         try {
                             await updateRemisionInAirtable(currentRemisionData.airtableId, {
                                 'Estado': 'Entregado',
-                                'Fecha de entrega': new Date().toISOString().split('T')[0]
+                                'Fecha de entrega': new Date().toISOString() // Fecha y hora completa
                             });
                         } catch (error) {
                             console.error('Error actualizando Airtable:', error);
@@ -2029,7 +2029,7 @@
                         await updateRemisionInAirtable(currentRemisionData.airtableId, {
                             'Estado': 'No entregado',
                             'Motivo de no entrega': motivo,
-                            'Fecha de entrega': new Date().toISOString().split('T')[0]
+                            'Fecha de entrega': new Date().toISOString() // Fecha y hora completa
                         });
                     } catch (error) {
                         console.error('Error actualizando Airtable:', error);
@@ -2435,11 +2435,19 @@
                     return;
                 }
                 
-                // Calcular precio total
-                const precioTotal = productosRemision.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
+                // Calcular precio total con IVA (como en el Excel)
+                const totalProductos = productosRemision.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
+                const subtotal = totalProductos;
+                const iva = subtotal * 0.19;
+                const totalConIva = subtotal + iva;
+                const precioTotal = totalConIva; // TOTAL FACTURADO (con IVA)
                 
                 // Crear string de productos para Airtable
                 const productosTexto = productosRemision.map(p => `${p.cantidad} ${p.codigo}`).join(', ');
+                
+                // Fecha y hora actual para creación
+                const ahora = new Date();
+                const fechaCreacion = ahora.toISOString(); // Formato ISO con hora
                 
                 const remisionData = {
                     numero: numero,
@@ -2451,9 +2459,13 @@
                     clientId: clientId,
                     clientName: client.name,
                     productos: productosRemision,
-                    precioTotal: precioTotal,
+                    totalProductos: totalProductos,
+                    subtotal: subtotal,
+                    iva: iva,
+                    precioTotal: precioTotal, // TOTAL FACTURADO
                     status: 'pending',
-                    createdAt: firebase.firestore.Timestamp.now()
+                    createdAt: firebase.firestore.Timestamp.now(),
+                    fechaCreacion: fechaCreacion
                 };
                 
                 console.log('📦 Creando remisión:', remisionData);
@@ -2462,20 +2474,31 @@
                 const docRef = await window.db.collection('remisiones').add(remisionData);
                 console.log('✅ Remisión guardada en Firebase:', docRef.id);
                 
-                // Guardar en Airtable
+                // Verificar que el cliente tenga airtableId
+                if (!client.airtableId) {
+                    console.error('❌ Cliente no tiene airtableId:', client);
+                    alert('⚠️ El cliente no está vinculado correctamente con Airtable. La remisión se guardó en Firebase pero no en Airtable.');
+                    await loadCreatedRemisiones();
+                    return;
+                }
+                
+                // Guardar en Airtable con el cliente anclado correctamente
                 const airtableData = {
                     'Código de remisión': parseInt(numero),
-                    'Cliente': [client.airtableId],
+                    'Cliente': [client.airtableId], // Array con el ID de Airtable del cliente
                     'Responsable de la remisión': creator,
-                    'Responsable de entrega': responsableEntrega,
+                    'Responsable de entrega': responsableEntrega || '',
                     'Productos remisionados': productosTexto,
-                    'Precio de venta': precioTotal,
+                    'Precio de venta': Math.round(precioTotal), // TOTAL FACTURADO (redondeado)
                     'Estado': 'Pendiente',
-                    'Fecha de entrega': new Date().toISOString().split('T')[0],
-                    'Factura electrónica': facturaElectronica,
-                    'Forma de pago': formaPago,
-                    'Observaciones': observaciones
+                    'Fecha de creación': fechaCreacion, // Fecha y hora de creación
+                    'Factura electrónica': facturaElectronica || '',
+                    'Forma de pago': formaPago || '',
+                    'Observaciones': observaciones || ''
+                    // NO incluimos 'Fecha de entrega' hasta que el empleado entregue
                 };
+                
+                console.log('📤 Enviando a Airtable:', airtableData);
                 
                 const airtableResponse = await fetch(
                     `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLES.remisiones}`,
@@ -2603,6 +2626,13 @@
         // Función para descargar Excel de remisión
         async function downloadRemisionExcel(remisionId) {
             try {
+                // Verificar que XLSX esté disponible
+                if (typeof XLSX === 'undefined') {
+                    alert('❌ La librería de Excel no está cargada. Por favor recarga la página.');
+                    console.error('XLSX no está definido');
+                    return;
+                }
+                
                 const doc = await window.db.collection('remisiones').doc(remisionId).get();
                 if (!doc.exists) {
                     alert('❌ Remisión no encontrada');
@@ -2612,10 +2642,17 @@
                 const remision = doc.data();
                 const productos = remision.productos || [];
                 
+                if (productos.length === 0) {
+                    alert('⚠️ Esta remisión no tiene productos');
+                    return;
+                }
+                
                 // Obtener datos del cliente
-                const client = clientsData[remision.clientId] || {};
+                const client = clientsData[remision.clientId] || firebaseClientsData[remision.clientId] || {};
                 
                 console.log('📊 Generando Excel para remisión #' + remision.numero);
+                console.log('📦 Productos:', productos.length);
+                console.log('💰 Total:', remision.precioTotal);
                 
                 // Crear un nuevo workbook
                 const wb = XLSX.utils.book_new();
@@ -2767,10 +2804,13 @@
                 XLSX.utils.book_append_sheet(wb, ws, 'Remisión');
                 
                 // Generar archivo y descargarlo
-                const filename = `REMISION_${remision.clientName}_${remision.numero}.xlsx`;
+                const filename = `REMISION_${remision.clientName.replace(/\s+/g, '_')}_${remision.numero}.xlsx`;
+                
+                console.log('📥 Descargando archivo:', filename);
                 XLSX.writeFile(wb, filename);
                 
-                console.log('✅ Excel generado:', filename);
+                console.log('✅ Excel generado exitosamente');
+                alert(`✅ Excel generado exitosamente:\n\n${filename}\n\nRevisa tu carpeta de Descargas.`);
                 
             } catch (error) {
                 console.error('❌ Error:', error);
