@@ -1,50 +1,84 @@
 <html lang="es">
-<!-- VERSION: 4.1.0 DEFINITIVO - Wrappers con sistema de espera -->
+<!-- VERSION: 5.0.0 SIMPLE - Funciones definidas directamente en HEAD -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Reportes de Mantenimiento</title>
     
-    <!-- Definir stubs de funciones ANTES del HTML para evitar "not defined" -->
+    <!-- Definir funciones DIRECTAMENTE antes del HTML -->
     <script>
-        console.log('✅✅✅ STUBS CARGADOS - ESPERANDO FUNCIONES REALES ✅✅✅');
+        console.log('✅ Cargando funciones globales...');
         
-        // Sistema de cola: guardar llamadas hasta que las funciones reales existan
-        window._pendingCalls = [];
+        // Funciones globales definidas AQUÍ para que existan cuando el HTML las necesite
+        var selectRole, selectEmployeeOption, backToRoleSelector, checkAdminPassword, backToEmployeeMenu;
         
-        // Crear wrapper que espera a que la función real exista
-        function createFunctionWrapper(functionName) {
-            return function(...args) {
-                console.log(`🔄 ${functionName} llamado (buscando función real...)`);
-                
-                // Intentar ejecutar la función real si ya existe
-                const realFunction = window['_real_' + functionName];
-                if (realFunction && typeof realFunction === 'function') {
-                    console.log(`✅ Ejecutando función real: ${functionName}`);
-                    return realFunction.apply(this, args);
-                }
-                
-                // Si no existe aún, esperar con setTimeout
-                console.log(`⏳ Esperando a que ${functionName} se cargue...`);
-                setTimeout(() => {
-                    const fn = window['_real_' + functionName];
-                    if (fn && typeof fn === 'function') {
-                        fn.apply(this, args);
-                    } else {
-                        console.error(`❌ ${functionName} nunca se cargó`);
-                    }
+        selectRole = function(role) {
+            console.log('Función selectRole llamada:', role);
+            document.getElementById('roleSelector').style.display = 'none';
+            if (role === 'empleado' || role === 'employee') {
+                document.getElementById('employeeView').style.display = 'block';
+                document.getElementById('employeeMenuSelection').style.display = 'block';
+                document.getElementById('employeeRemisiones').style.display = 'none';
+                document.getElementById('employeeReportes').style.display = 'none';
+            } else if (role === 'administrador' || role === 'admin') {
+                document.getElementById('adminView').style.display = 'block';
+                document.getElementById('adminPasswordPrompt').style.display = 'block';
+                document.getElementById('adminPanel').style.display = 'none';
+            }
+        };
+        
+        selectEmployeeOption = function(option) {
+            console.log('Opción seleccionada:', option);
+            document.getElementById('employeeMenuSelection').style.display = 'none';
+            if (option === 'remisiones') {
+                document.getElementById('employeeRemisiones').style.display = 'block';
+                // loadPendingRemisiones se cargará después
+                setTimeout(function() { 
+                    if (typeof loadPendingRemisiones === 'function') loadPendingRemisiones(); 
                 }, 100);
-            };
-        }
+            } else if (option === 'reportes') {
+                document.getElementById('employeeReportes').style.display = 'block';
+                setTimeout(function() { 
+                    if (typeof initSignatureCanvas === 'function') initSignatureCanvas(); 
+                }, 100);
+            }
+        };
         
-        // Crear wrappers para todas las funciones críticas
-        window.selectRole = createFunctionWrapper('selectRole');
-        window.selectEmployeeOption = createFunctionWrapper('selectEmployeeOption');
-        window.backToRoleSelector = createFunctionWrapper('backToRoleSelector');
-        window.checkAdminPassword = createFunctionWrapper('checkAdminPassword');
-        window.backToEmployeeMenu = createFunctionWrapper('backToEmployeeMenu');
+        backToRoleSelector = function() {
+            document.getElementById('roleSelector').style.display = 'block';
+            document.getElementById('employeeView').style.display = 'none';
+            document.getElementById('adminView').style.display = 'none';
+        };
         
-        console.log('🎯 Wrappers creados para:', Object.keys(window).filter(k => k.includes('select') || k.includes('back') || k.includes('check')));
+        backToEmployeeMenu = function() {
+            document.getElementById('employeeMenuSelection').style.display = 'block';
+            document.getElementById('employeeRemisiones').style.display = 'none';
+            document.getElementById('employeeReportes').style.display = 'none';
+        };
+        
+        checkAdminPassword = async function() {
+            var password = document.getElementById('adminPassword').value;
+            var errorMsg = document.getElementById('passwordError');
+            if (password === '420') {
+                document.getElementById('adminPasswordPrompt').style.display = 'none';
+                document.getElementById('adminPanel').style.display = 'block';
+                document.getElementById('adminPassword').value = '';
+                errorMsg.style.display = 'none';
+                console.log('Cargando datos...');
+                // Las funciones de carga se ejecutarán después
+                setTimeout(async function() {
+                    if (typeof loadClientsFromAirtable === 'function') await loadClientsFromAirtable();
+                    if (typeof loadProductsFromAirtable === 'function') await loadProductsFromAirtable();
+                    if (typeof loadAdminClients === 'function') loadAdminClients();
+                    if (typeof loadPendingReports === 'function') loadPendingReports();
+                }, 100);
+            } else {
+                errorMsg.style.display = 'block';
+                document.getElementById('adminPassword').value = '';
+            }
+        };
+        
+        console.log('✅ Funciones globales cargadas');
     </script>
     
     <!-- jsPDF for PDF generation -->
@@ -1749,9 +1783,9 @@
             }
         }
         // Registrar como función real
-        window._real_selectRole = selectRole;
+        
         window.selectRole = selectRole;
-        console.log('✅ selectRole REAL registrada');
+        
         
         function selectEmployeeOption(option) {
             console.log('👷 Opción seleccionada:', option);
@@ -1767,7 +1801,7 @@
                 setTimeout(initSignatureCanvas, 100);
             }
         }
-        window._real_selectEmployeeOption = selectEmployeeOption;
+        
         window.selectEmployeeOption = selectEmployeeOption;
         
         function backToEmployeeMenu() {
@@ -1775,7 +1809,7 @@
             document.getElementById('employeeRemisiones').style.display = 'none';
             document.getElementById('employeeReportes').style.display = 'none';
         }
-        window._real_backToEmployeeMenu = backToEmployeeMenu;
+        
         window.backToEmployeeMenu = backToEmployeeMenu;
         
         // ===== VARIABLES GLOBALES PARA ENTREGAS =====
@@ -3125,7 +3159,7 @@
             document.getElementById('employeeView').style.display = 'none';
             document.getElementById('adminView').style.display = 'none';
         }
-        window._real_backToRoleSelector = backToRoleSelector;
+        
         window.backToRoleSelector = backToRoleSelector;
 
         function openNewEquipmentModal() {
@@ -3621,7 +3655,7 @@
                 document.getElementById('adminPassword').value = '';
             }
         }
-        window._real_checkAdminPassword = checkAdminPassword;
+        
         window.checkAdminPassword = checkAdminPassword;
 
         function switchAdminTab(tab) {
