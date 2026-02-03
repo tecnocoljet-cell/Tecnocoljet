@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.7.0 - Productos de Airtable, Editar equipos, Reportes sin índice -->
+<!-- VERSION: 2.9.0 - Errores corregidos: selectedClientForPrices y índice Firebase -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1579,6 +1579,7 @@
         // Store clients data globally
         let clientsData = {};
         let clientsLoaded = false;
+        let selectedClientForPrices = null; // Para agregar precios a cliente
 
         // Load clients from Airtable
         async function loadClientsFromAirtable() {
@@ -2650,171 +2651,198 @@
                 // Obtener datos del cliente
                 const client = clientsData[remision.clientId] || firebaseClientsData[remision.clientId] || {};
                 
-                console.log('📊 Generando Excel para remisión #' + remision.numero);
-                console.log('📦 Productos:', productos.length);
-                console.log('💰 Total:', remision.precioTotal);
+                console.log('📊 Generando Excel IDÉNTICO AL ORIGINAL para remisión #' + remision.numero);
                 
-                // Crear un nuevo workbook
+                // Crear workbook y worksheet vacío
                 const wb = XLSX.utils.book_new();
+                const ws = {};
                 
-                // Crear array de datos para el formato
-                const data = [];
+                // Definir rango de la hoja (42 filas x 10 columnas como el original)
+                ws['!ref'] = 'A1:J42';
                 
-                // Filas vacías iniciales (0-3)
-                for (let i = 0; i < 4; i++) {
-                    data.push([]);
+                // Función helper para escribir celda
+                const setCell = (row, col, value, type = 's') => {
+                    const cell_ref = XLSX.utils.encode_cell({r: row, c: col});
+                    if (value === '' || value === null || value === undefined) {
+                        return; // No escribir celdas vacías
+                    }
+                    ws[cell_ref] = {v: value, t: type};
+                };
+                
+                // FILA 4 (índice 4): REMISION
+                setCell(4, 2, 'REMISION');
+                
+                // FILA 5: Número de remisión
+                setCell(5, 2, parseInt(remision.numero), 'n');
+                
+                // FILA 6: Espacios
+                setCell(6, 2, '    ');
+                
+                // FILA 9: Razón Social
+                setCell(9, 0, 'Razon social');
+                setCell(9, 1, client.razonSocial || client.name || '');
+                
+                // FILA 10: Dirección
+                setCell(10, 0, 'Direccion');
+                setCell(10, 1, client.direccion || '');
+                setCell(10, 9, ' '); // Espacio en columna 9
+                
+                // FILA 11: Teléfono
+                setCell(11, 0, 'Telefono');
+                if (client.telefono) {
+                    const tel = client.telefono.replace(/\D/g, ''); // Solo números
+                    setCell(11, 1, parseFloat(tel) || client.telefono, 'n');
                 }
                 
-                // Fila 4: REMISION
-                data.push(['', '', 'REMISION']);
-                
-                // Fila 5: Número de remisión
-                data.push(['', '', remision.numero]);
-                
-                // Fila 6: Vacía
-                data.push([]);
-                
-                // Filas 7-8: Vacías
-                data.push([]);
-                data.push([]);
-                
-                // Fila 9: Razón Social
-                data.push(['Razon social', client.razonSocial || client.name || '']);
-                
-                // Fila 10: Dirección
-                data.push(['Direccion', client.direccion || '']);
-                
-                // Fila 11: Teléfono
-                data.push(['Telefono', client.telefono || '']);
-                
-                // Fila 12: NIT y Fecha
+                // FILA 12: NIT y Fecha
+                setCell(12, 0, 'Nit');
+                setCell(12, 1, client.documento || client.nit || '');
+                setCell(12, 4, 'F.Remision');
+                // Fecha en formato Excel
                 const today = new Date();
                 const excelDate = Math.floor((today - new Date(1899, 11, 30)) / (24 * 60 * 60 * 1000));
-                data.push(['Nit', client.documento || '', '', '', 'F.Remision', '', '', excelDate]);
+                ws['H13'] = {v: excelDate, t: 'n', z: 'dd/mm/yyyy'};
                 
-                // Fila 13: Ciudad
-                data.push(['Ciudad', client.ciudad || '']);
+                // FILA 13: Ciudad
+                setCell(13, 0, 'Ciudad');
+                setCell(13, 1, client.ciudad || '');
                 
-                // Filas 14-18: Vacías (con algunos detalles)
-                data.push([]);
-                data.push([]);
-                data.push(['', '', '', '', '', '', '', 'nit 900283540-4']);
-                data.push(['', '', '', '', 'REGIMEN COMUN']);
-                data.push([]);
+                // FILA 16: NIT TECNOCOLJET
+                setCell(16, 7, 'nit 900283540-4');
                 
-                // Fila 19: Encabezados de productos
-                data.push(['CODIGO', 'BODEGA', 'DESCRIPCION', 'LOTE', 'CANTIDAD', '', '', 'V/ UNIT', 'V/TOTAL']);
+                // FILA 17: REGIMEN COMUN
+                setCell(17, 4, 'REGIMEN COMUN');
                 
-                // Filas 20-29: Productos (dinámico)
-                let startRow = 20;
-                productos.forEach((prod, idx) => {
-                    const rowIdx = startRow + idx;
+                // FILA 18: Espacio
+                setCell(18, 9, ' ');
+                
+                // FILA 19: ENCABEZADOS
+                setCell(19, 0, 'CODIGO');
+                setCell(19, 1, 'BODEGA');
+                setCell(19, 2, 'DESCRIPCION');
+                setCell(19, 3, 'LOTE');
+                setCell(19, 4, 'CANTIDAD');
+                setCell(19, 7, 'V/ UNIT');
+                setCell(19, 8, 'V/TOTAL');
+                
+                // FILAS 20-29: PRODUCTOS
+                let totalProductos = 0;
+                for (let i = 0; i < productos.length && i < 10; i++) {
+                    const prod = productos[i];
+                    const row = 20 + i;
                     const subtotal = prod.cantidad * prod.precioUnitario;
-                    data.push([
-                        prod.codigo,           // CODIGO
-                        1,                     // BODEGA (siempre 1)
-                        prod.nombre,           // DESCRIPCION
-                        '',                    // LOTE (vacío)
-                        prod.cantidad,         // CANTIDAD
-                        '',
-                        '',
-                        prod.precioUnitario,   // V/ UNIT
-                        subtotal               // V/TOTAL (fórmula será: cantidad * precio)
-                    ]);
-                });
-                
-                // Completar hasta fila 29 si hay menos de 10 productos
-                const numProductos = productos.length;
-                for (let i = numProductos; i < 10; i++) {
-                    data.push([]);
+                    totalProductos += subtotal;
+                    
+                    // CODIGO - intentar convertir a número
+                    const codigo = prod.codigo;
+                    if (!isNaN(codigo) && codigo !== '') {
+                        setCell(row, 0, parseFloat(codigo), 'n');
+                    } else {
+                        setCell(row, 0, codigo);
+                    }
+                    
+                    setCell(row, 1, 1, 'n'); // BODEGA
+                    setCell(row, 2, prod.nombre); // DESCRIPCION
+                    // LOTE vacío (col 3)
+                    setCell(row, 4, prod.cantidad, 'n'); // CANTIDAD
+                    
+                    // V/ UNIT con formato moneda
+                    ws[XLSX.utils.encode_cell({r: row, c: 7})] = {
+                        v: prod.precioUnitario, 
+                        t: 'n',
+                        z: '#,##0'
+                    };
+                    
+                    // V/TOTAL con formato moneda
+                    ws[XLSX.utils.encode_cell({r: row, c: 8})] = {
+                        v: subtotal,
+                        t: 'n', 
+                        z: '#,##0'
+                    };
                 }
                 
                 // Calcular totales
-                const totalProductos = productos.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
-                const descuentos = 0;
-                const subtotal = totalProductos - descuentos;
-                const iva = subtotal * 0.19; // IVA del 19%
+                const subtotal = totalProductos;
+                const iva = Math.round(subtotal * 0.19);
                 const totalConIva = subtotal + iva;
                 const totalFacturado = totalConIva;
                 
-                // Fila 29: TOTAL PRODUCTOS (después de todos los productos)
-                const totalRow = startRow + Math.max(numProductos, 10);
-                while (data.length < totalRow) {
-                    data.push([]);
-                }
-                data.push(['', '', '', '', 'TOTAL PRODUCTOS', '', '', '', totalProductos]);
+                // FILA 29: TOTAL PRODUCTOS
+                setCell(29, 4, 'TOTAL PRODUCTOS');
+                ws['I30'] = {v: totalProductos, t: 'n', z: '#,##0'};
                 
-                // Filas 30-39: Resumen financiero
-                data.push(['', '', '', '', 'DESCUENTOS', '', '', '', descuentos]);
-                data.push(['', '', '', '', 'DESCUENTOS PROMO', '', '', '', 0]);
-                data.push(['', '', '', '', 'OTROS DESCUENTOS', '', '', '', 0]);
-                data.push(['', '', '', '', 'SUBTOTAL', '', '', '', subtotal]);
-                data.push(['', '', '', '', 'IVA', '', '', '', iva]);
-                data.push(['', '', '', '', 'TOTAL CON IVA', '', '', '', totalConIva]);
-                data.push(['', '', '', '', 'RTE FUENTE', '', '', '', 0]);
-                data.push(['O. DE COMPRA', '', '', '', 'RTE IVA', '', '', '', 0]);
-                data.push(['', '', '', '', 'RTE ICA', '', '', '', 0]);
-                data.push(['', '', '', '', 'TOTAL FACTURADO', '', '', '', totalFacturado]);
+                // FILA 30: DESCUENTOS
+                setCell(30, 4, 'DESCUENTOS');
+                ws['I31'] = {v: 0, t: 'n', z: '#,##0'};
                 
-                // Crear worksheet desde el array
-                const ws = XLSX.utils.aoa_to_sheet(data);
+                // FILA 31: DESCUENTOS PROMO
+                setCell(31, 4, 'DESCUENTOS PROMO');
+                ws['I32'] = {v: 0, t: 'n', z: '#,##0'};
                 
-                // Configurar anchos de columna
+                // FILA 32: OTROS DESCUENTOS
+                setCell(32, 4, 'OTROS DESCUENTOS');
+                ws['I33'] = {v: 0, t: 'n', z: '#,##0'};
+                
+                // FILA 33: SUBTOTAL
+                setCell(33, 4, 'SUBTOTAL');
+                ws['I34'] = {v: subtotal, t: 'n', z: '#,##0'};
+                
+                // FILA 34: IVA
+                setCell(34, 4, 'IVA');
+                ws['I35'] = {v: iva, t: 'n', z: '#,##0'};
+                
+                // FILA 35: TOTAL CON IVA
+                setCell(35, 4, 'TOTAL CON IVA');
+                ws['I36'] = {v: totalConIva, t: 'n', z: '#,##0'};
+                
+                // FILA 36: RTE FUENTE
+                setCell(36, 4, 'RTE FUENTE');
+                ws['I37'] = {v: 0, t: 'n', z: '#,##0'};
+                
+                // FILA 37: O. DE COMPRA y RTE IVA
+                setCell(37, 0, 'O. DE COMPRA');
+                setCell(37, 4, 'RTE IVA');
+                ws['I38'] = {v: 0, t: 'n', z: '#,##0'};
+                
+                // FILA 38: RTE ICA
+                setCell(38, 4, 'RTE ICA');
+                ws['I39'] = {v: 0, t: 'n', z: '#,##0'};
+                
+                // FILA 39: TOTAL FACTURADO
+                setCell(39, 4, 'TOTAL FACTURADO');
+                ws['I40'] = {v: totalFacturado, t: 'n', z: '#,##0'};
+                
+                // FILA 41: Firma
+                setCell(41, 0, 'TECNOCOLJET Elaborado');
+                setCell(41, 7, 'RECIBE CONFORME');
+                
+                // Configurar anchos de columna (en caracteres)
                 ws['!cols'] = [
-                    { wch: 12 },  // A - CODIGO
-                    { wch: 8 },   // B - BODEGA
-                    { wch: 30 },  // C - DESCRIPCION
-                    { wch: 8 },   // D - LOTE
-                    { wch: 10 },  // E - CANTIDAD
-                    { wch: 8 },   // F
-                    { wch: 8 },   // G
-                    { wch: 12 },  // H - V/ UNIT
-                    { wch: 15 }   // I - V/TOTAL
+                    {wch: 12},  // A - CODIGO
+                    {wch: 8},   // B - BODEGA  
+                    {wch: 32},  // C - DESCRIPCION
+                    {wch: 8},   // D - LOTE
+                    {wch: 16},  // E - CANTIDAD / Labels
+                    {wch: 8},   // F
+                    {wch: 8},   // G
+                    {wch: 12},  // H - V/ UNIT / F.Remision
+                    {wch: 15},  // I - V/TOTAL
+                    {wch: 8}    // J
                 ];
                 
-                // Formato de números con separadores de miles
-                const numFmt = '#,##0';
-                const moneyFmt = '$#,##0';
-                
-                // Aplicar formato a celdas de dinero
-                productos.forEach((prod, idx) => {
-                    const rowNum = startRow + idx + 1; // +1 porque Excel es 1-indexed
-                    const cellH = `H${rowNum}`; // V/ UNIT
-                    const cellI = `I${rowNum}`; // V/TOTAL
-                    
-                    if (ws[cellH]) ws[cellH].z = moneyFmt;
-                    if (ws[cellI]) ws[cellI].z = moneyFmt;
-                });
-                
-                // Aplicar formato a totales
-                const totalRowNum = totalRow + 1;
-                for (let i = 0; i < 11; i++) {
-                    const cellRef = `I${totalRowNum + i}`;
-                    if (ws[cellRef]) ws[cellRef].z = moneyFmt;
-                }
-                
-                // Formato de fecha en F.Remision (H12 en Excel = fila 12, col 7)
-                const dateCell = 'H13';
-                if (ws[dateCell]) {
-                    ws[dateCell].t = 'n';
-                    ws[dateCell].z = 'dd/mm/yyyy';
-                }
-                
-                // Agregar worksheet al workbook
+                // Agregar hoja al workbook
                 XLSX.utils.book_append_sheet(wb, ws, 'Remisión');
                 
-                // Generar archivo y descargarlo
+                // Generar y descargar
                 const filename = `REMISION_${remision.clientName.replace(/\s+/g, '_')}_${remision.numero}.xlsx`;
-                
-                console.log('📥 Descargando archivo:', filename);
                 XLSX.writeFile(wb, filename);
                 
-                console.log('✅ Excel generado exitosamente');
-                alert(`✅ Excel generado exitosamente:\n\n${filename}\n\nRevisa tu carpeta de Descargas.`);
+                console.log('✅ Excel generado IDÉNTICO:', filename);
+                alert(`✅ Excel generado exitosamente:\n${filename}\n\nRevisa tu carpeta de Descargas.`);
                 
             } catch (error) {
-                console.error('❌ Error:', error);
-                alert('❌ Error al generar Excel: ' + error.message);
+                console.error('❌ Error generando Excel:', error);
+                alert('❌ Error: ' + error.message);
             }
         }
         window.downloadRemisionExcel = downloadRemisionExcel;
@@ -5863,9 +5891,9 @@
         
         async function viewEquipmentReports(equipmentId, equipmentNumber) {
             try {
+                // Solo WHERE, ordenar en JavaScript para evitar índice compuesto
                 const snapshot = await window.db.collection('reports')
                     .where('equipmentId', '==', equipmentId)
-                    .orderBy('createdAt', 'desc')
                     .get();
                 
                 if (snapshot.empty) {
@@ -5873,16 +5901,28 @@
                     return;
                 }
                 
-                let historial = `📋 HISTORIAL - EQUIPO #${equipmentNumber}\n\n`;
+                // Ordenar en JavaScript
+                const reportes = [];
                 snapshot.forEach(doc => {
-                    const report = doc.data();
+                    reportes.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Ordenar por fecha (más recientes primero)
+                reportes.sort((a, b) => {
+                    const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                    const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                    return timeB - timeA;
+                });
+                
+                let historial = `📋 HISTORIAL - EQUIPO #${equipmentNumber}\n\n`;
+                reportes.forEach(report => {
                     const fecha = report.createdAt ? new Date(report.createdAt.toDate()).toLocaleDateString('es-CO', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric'
                     }) : 'N/A';
                     historial += `📅 ${fecha}\n`;
-                    historial += `Tipo: ${report.reportType || 'N/A'}\n`;
+                    historial += `Tipo: ${report.serviceType || report.reportType || 'N/A'}\n`;
                     historial += `Descripción: ${(report.issueDescription || '').substring(0, 150)}...\n`;
                     historial += `Estado: ${report.status === 'approved' ? '✅ Aprobado' : '⏳ Pendiente'}\n\n`;
                     historial += '---\n\n';
