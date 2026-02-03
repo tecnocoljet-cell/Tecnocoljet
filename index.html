@@ -1,9 +1,9 @@
 <html lang="es">
-<!-- VERSION: 5.0.0 SIMPLE - Funciones definidas directamente en HEAD -->
+<!-- VERSION: 5.0.1 - switchAdminTab agregada -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TECNOCOLJET - Sistema de Gestión v5.0</title>
+    <title>Sistema de Reportes de Mantenimiento</title>
     
     <!-- Definir funciones DIRECTAMENTE antes del HTML -->
     <script>
@@ -75,6 +75,55 @@
             } else {
                 errorMsg.style.display = 'block';
                 document.getElementById('adminPassword').value = '';
+            }
+        };
+        
+        switchAdminTab = function(tab) {
+            var tabReportes = document.getElementById('tabReportes');
+            var tabRemisiones = document.getElementById('tabRemisiones');
+            var tabClientes = document.getElementById('tabClientes');
+            
+            [tabReportes, tabRemisiones, tabClientes].forEach(function(t) {
+                if (t) {
+                    t.style.background = '#f3f4f6';
+                    t.style.color = '#666';
+                    t.style.border = '2px solid transparent';
+                    t.style.boxShadow = 'none';
+                }
+            });
+            
+            document.getElementById('contentReportes').style.display = 'none';
+            document.getElementById('contentEquipos').style.display = 'none';
+            document.getElementById('contentRemisiones').style.display = 'none';
+            document.getElementById('contentClientes').style.display = 'none';
+            document.getElementById('contentProductos').style.display = 'none';
+            
+            if (tab === 'reportes') {
+                tabReportes.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                tabReportes.style.color = 'white';
+                tabReportes.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                document.getElementById('contentReportes').style.display = 'block';
+            } else if (tab === 'remisiones') {
+                tabRemisiones.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                tabRemisiones.style.color = 'white';
+                tabRemisiones.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
+                document.getElementById('contentRemisiones').style.display = 'block';
+                setTimeout(function() {
+                    if (typeof loadCreatedRemisiones === 'function') loadCreatedRemisiones();
+                    if (typeof loadNextRemisionNumber === 'function') loadNextRemisionNumber();
+                    if (typeof clientsData !== 'undefined' && Object.keys(clientsData).length === 0) {
+                        if (typeof loadClientsFromAirtable === 'function') loadClientsFromAirtable();
+                        if (typeof loadProductsFromAirtable === 'function') loadProductsFromAirtable();
+                    }
+                }, 100);
+            } else if (tab === 'clientes') {
+                tabClientes.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                tabClientes.style.color = 'white';
+                tabClientes.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                document.getElementById('contentClientes').style.display = 'block';
+                setTimeout(function() {
+                    if (typeof loadClientsListAdmin === 'function') loadClientsListAdmin();
+                }, 100);
             }
         };
         
