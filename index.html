@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 3.0.0 - Funciones globales corregidas con expresiones de función -->
+<!-- VERSION: 3.1.1 - setTimeout para funciones que se cargan después -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1584,6 +1584,11 @@
         // Declarar funciones globales para evitar errores de referencia
         let loadPendingReports, loadClientsListAdmin, filterAdminClientsList;
         
+        // Asignar a window inmediatamente para que estén disponibles
+        window.loadPendingReports = null;
+        window.loadClientsListAdmin = null;
+        window.filterAdminClientsList = null;
+        
         // Store clients data globally
         let clientsData = {};
         let clientsLoaded = false;
@@ -2635,12 +2640,7 @@
         // Función para descargar Excel de remisión
         async function downloadRemisionExcel(remisionId) {
             try {
-                // Verificar que XLSX esté disponible
-                if (typeof XLSX === 'undefined') {
-                    alert('❌ La librería de Excel no está cargada. Por favor recarga la página.');
-                    console.error('XLSX no está definido');
-                    return;
-                }
+                console.log('📥 Generando Excel con formato IDÉNTICO al original...');
                 
                 const doc = await window.db.collection('remisiones').doc(remisionId).get();
                 if (!doc.exists) {
@@ -2659,7 +2659,102 @@
                 // Obtener datos del cliente
                 const client = clientsData[remision.clientId] || firebaseClientsData[remision.clientId] || {};
                 
-                console.log('📊 Generando Excel IDÉNTICO AL ORIGINAL para remisión #' + remision.numero);
+                // Calcular totales
+                const totalProductos = remision.totalProductos || productos.reduce((sum, p) => sum + (p.cantidad * p.precioUnitario), 0);
+                const subtotal = remision.subtotal || totalProductos;
+                const iva = remision.iva || Math.round(subtotal * 0.19);
+                const totalConIva = remision.precioTotal || (subtotal + iva);
+                
+                // Preparar datos para el servidor
+                const datosRemision = {
+                    numero: remision.numero.toString(),
+                    cliente: {
+                        razonSocial: client.razonSocial || client.name || '',
+                        direccion: client.direccion || '',
+                        telefono: client.telefono || '',
+                        nit: client.documento || client.nit || '',
+                        ciudad: client.ciudad || ''
+                    },
+                    productos: productos.map(p => ({
+                        codigo: p.codigo.toString(),
+                        nombre: p.nombre,
+                        cantidad: p.cantidad,
+                        precioUnitario: p.precioUnitario
+                    })),
+                    totales: {
+                        totalProductos: totalProductos,
+                        subtotal: subtotal,
+                        iva: iva,
+                        totalConIva: totalConIva
+                    }
+                };
+                
+                console.log('📤 Enviando datos al servidor:', datosRemision);
+                
+                // URL del servidor (ajusta según tu configuración)
+                const SERVIDOR_URL = 'http://localhost:5000/api/generar-remision';
+                
+                // Mostrar mensaje de espera
+                const loadingMsg = alert('⏳ Generando Excel con formato original...\n\nEsto puede tardar unos segundos.');
+                
+                // Llamar al servidor
+                const response = await fetch(SERVIDOR_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(datosRemision)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Error del servidor');
+                }
+                
+                // Descargar archivo
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `REMISION_${client.name || 'CLIENTE'}_${remision.numero}.xls`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                console.log('✅ Excel generado exitosamente');
+                alert(`✅ Excel generado con formato original\n\nArchivo: REMISION_${client.name}_${remision.numero}.xls\n\nRevisa tu carpeta de Descargas.`);
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                
+                // Si el servidor no está disponible, ofrecer alternativa
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    const usarAlternativo = confirm(
+                        '❌ No se pudo conectar al servidor de Excel\n\n' +
+                        'El servidor Python no está en ejecución.\n\n' +
+                        '¿Deseas generar un Excel básico (sin formato original)?'
+                    );
+                    
+                    if (usarAlternativo) {
+                        await downloadRemisionExcelBasico(remisionId);
+                    } else {
+                        alert(
+                            '📋 INSTRUCCIONES PARA USAR EL SERVIDOR:\n\n' +
+                            '1. Descarga el servidor Python del proyecto\n' +
+                            '2. Instala: pip install flask flask-cors xlrd xlutils\n' +
+                            '3. Ejecuta: python servidor_remisiones.py\n' +
+                            '4. Intenta generar el Excel de nuevo'
+                        );
+                    }
+                } else {
+                    alert('❌ Error al generar Excel: ' + error.message);
+                }
+            }
+        }
+        window.downloadRemisionExcel = downloadRemisionExcel;
+
+        function initSignatureCanvas() {
                 
                 // Crear workbook y worksheet vacío
                 const wb = XLSX.utils.book_new();
@@ -3419,8 +3514,14 @@
                 // Load clients for equipment management
                 loadAdminClients();
                 
-                // Load pending reports
-                loadPendingReports();
+                // Load pending reports - usar setTimeout para esperar a que se cargue
+                setTimeout(() => {
+                    if (typeof window.loadPendingReports === 'function') {
+                        window.loadPendingReports();
+                    } else {
+                        console.warn('⚠️ loadPendingReports aún no está definida');
+                    }
+                }, 100);
                 
                 console.log('✅ Datos cargados desde Airtable');
             } else {
@@ -3482,7 +3583,12 @@
                 tabClientes.style.color = 'white';
                 tabClientes.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
                 document.getElementById('contentClientes').style.display = 'block';
-                loadClientsListAdmin();
+                if (typeof window.loadClientsListAdmin === 'function') {
+                    window.loadClientsListAdmin();
+                } else {
+                    console.warn('⚠️ loadClientsListAdmin aún no está definida');
+                    setTimeout(() => window.loadClientsListAdmin && window.loadClientsListAdmin(), 100);
+                }
             }
         }
 
