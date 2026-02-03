@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.9.0 - Errores corregidos: selectedClientForPrices y índice Firebase -->
+<!-- VERSION: 2.9.1 - Input de contraseña corregido -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -917,7 +917,12 @@
             <div id="adminPasswordPrompt" style="max-width: 400px; margin: 100px auto; text-align: center;">
                 <h2>🔒 Acceso Administrativo</h2>
                 <p style="color: #666; margin: 20px 0;">Ingresa la contraseña para continuar</p>
-                <input type="password" id="adminPassword" placeholder="Contraseña" style="width: 100%; padding: 15px; font-size: 16px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 15px;">
+                <input 
+                    type="password" 
+                    id="adminPassword" 
+                    placeholder="Contraseña" 
+                    autocomplete="off"
+                    style="width: 100%; padding: 15px; font-size: 16px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 15px;">
                 <button onclick="checkAdminPassword()" style="width: 100%; padding: 15px; background: #667eea; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
                     Acceder
                 </button>
@@ -4060,9 +4065,10 @@
                 clientSelect.innerHTML = '<option value="">No hay clientes en Airtable</option>';
             }
 
-            // Add Enter key support for admin password
+            // Add Enter key support for admin password (solo una vez)
             const passwordInput = document.getElementById('adminPassword');
-            if (passwordInput) {
+            if (passwordInput && !passwordInput.hasAttribute('data-listener-added')) {
+                passwordInput.setAttribute('data-listener-added', 'true');
                 passwordInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
                         checkAdminPassword();
