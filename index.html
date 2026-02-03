@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 5.0.3 FINAL - filterAdminClientsList agregada -->
+<!-- VERSION: 5.1.0 DEFINITIVO - TODOS los stubs agregados -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,10 +9,27 @@
     <script>
         console.log('✅ Cargando funciones globales...');
         
-        // Funciones globales definidas AQUÍ para que existan cuando el HTML las necesite
-        var selectRole, selectEmployeeOption, backToRoleSelector, checkAdminPassword, backToEmployeeMenu;
+        // STUBS para TODAS las funciones que se usarán después
+        // Estas funciones básicas esperan a que se carguen las reales
         
-        selectRole = function(role) {
+        function waitForFunction(fnName) {
+            return function() {
+                var args = arguments;
+                var realFn = window['_real_' + fnName];
+                if (realFn && typeof realFn === 'function') {
+                    return realFn.apply(this, args);
+                }
+                setTimeout(function() {
+                    var fn = window['_real_' + fnName];
+                    if (fn && typeof fn === 'function') {
+                        fn.apply(this, args);
+                    }
+                }, 100);
+            };
+        }
+        
+        // Funciones principales definidas completas
+        var selectRole = function(role) {
             console.log('Función selectRole llamada:', role);
             document.getElementById('roleSelector').style.display = 'none';
             if (role === 'empleado' || role === 'employee') {
@@ -127,24 +144,37 @@
             }
         };
         
-        filterAdminClientsList = function(query) {
-            console.log('Buscando:', query);
-            // Esperar a que la función real se cargue
-            setTimeout(function() {
-                if (typeof window._filterAdminClientsListReal === 'function') {
-                    window._filterAdminClientsListReal(query);
-                }
-            }, 100);
-        };
+        // STUBS para todas las demás funciones
+        window.filterAdminClientsList = waitForFunction('filterAdminClientsList');
+        window.showClientDetails = waitForFunction('showClientDetails');
+        window.loadCreatedRemisiones = waitForFunction('loadCreatedRemisiones');
+        window.loadNextRemisionNumber = waitForFunction('loadNextRemisionNumber');
+        window.addProductoToRemision = waitForFunction('addProductoToRemision');
+        window.removeProducto = waitForFunction('removeProducto');
+        window.createRemision = waitForFunction('createRemision');
+        window.viewRemisionDetails = waitForFunction('viewRemisionDetails');
+        window.downloadRemisionExcel = waitForFunction('downloadRemisionExcel');
+        window.deleteRemision = waitForFunction('deleteRemision');
+        window.loadPendingRemisiones = waitForFunction('loadPendingRemisiones');
+        window.markAsDelivered = waitForFunction('markAsDelivered');
+        window.markAsNotDelivered = waitForFunction('markAsNotDelivered');
+        window.addEquipmentToReport = waitForFunction('addEquipmentToReport');
+        window.removeEquipmentFromReport = waitForFunction('removeEquipmentFromReport');
+        window.addMaterialRow = waitForFunction('addMaterialRow');
+        window.submitReport = waitForFunction('submitReport');
+        window.clearSignature = waitForFunction('clearSignature');
+        window.approveReport = waitForFunction('approveReport');
+        window.rejectReport = waitForFunction('rejectReport');
+        window.viewReportDetails = waitForFunction('viewReportDetails');
+        window.generateReportPDF = waitForFunction('generateReportPDF');
         
-        // Asignar TODAS las funciones a window para que sean accesibles globalmente
+        // Asignar funciones principales a window
         window.selectRole = selectRole;
         window.selectEmployeeOption = selectEmployeeOption;
         window.backToRoleSelector = backToRoleSelector;
         window.backToEmployeeMenu = backToEmployeeMenu;
         window.checkAdminPassword = checkAdminPassword;
         window.switchAdminTab = switchAdminTab;
-        window.filterAdminClientsList = filterAdminClientsList;
         
         console.log('✅ Funciones globales cargadas');
     </script>
@@ -1734,6 +1764,7 @@
         // Asignar a window inmediatamente
         window.loadPendingReports = loadPendingReports;
         window.loadClientsListAdmin = loadClientsListAdmin;
+        window._real_filterAdminClientsList = filterAdminClientsList;
         window.filterAdminClientsList = filterAdminClientsList;
         
         // Store clients data globally
@@ -2499,6 +2530,7 @@
                 inputNumero.placeholder = 'Ingresa el número manualmente';
             }
         }
+        window._real_loadNextRemisionNumber = loadNextRemisionNumber;
         window.loadNextRemisionNumber = loadNextRemisionNumber;
         
         async function loadCreatedRemisiones() {
@@ -2713,6 +2745,7 @@
                 btnSubmit.style.opacity = '1';
             }
         }
+        window._real_createRemision = createRemision;
         window.createRemision = createRemision;
         
         // Función para eliminar remisión
@@ -2753,6 +2786,7 @@
                 alert('❌ Error al eliminar: ' + error.message);
             }
         }
+        window._real_deleteRemision = deleteRemision;
         window.deleteRemision = deleteRemision;
         
         // Función para ver detalles de remisión
@@ -2790,6 +2824,7 @@
                 alert('❌ Error al cargar detalles: ' + error.message);
             }
         }
+        window._real_viewRemisionDetails = viewRemisionDetails;
         window.viewRemisionDetails = viewRemisionDetails;
         
         // Función para descargar Excel de remisión
@@ -2949,6 +2984,7 @@
                 alert('❌ Error al generar Excel: ' + error.message);
             }
         }
+        window._real_downloadRemisionExcel = downloadRemisionExcel;
         window.downloadRemisionExcel = downloadRemisionExcel;
 
         function initSignatureCanvas() {
@@ -3145,6 +3181,7 @@
                 alert('❌ Error: ' + error.message);
             }
         }
+        window._real_downloadRemisionExcel = downloadRemisionExcel;
         window.downloadRemisionExcel = downloadRemisionExcel;
 
         function initSignatureCanvas() {
@@ -5949,6 +5986,7 @@
             loadClientEquipmentsInline(client.id);
             loadClientReportsInline(client.id);
         }
+        window._real_showClientDetails = showClientDetails;
         window.showClientDetails = showClientDetails;
         
         // Función para volver a la lista de clientes
@@ -6356,6 +6394,7 @@
             `;
         };
         window._filterAdminClientsListReal = filterAdminClientsList;
+        window._real_filterAdminClientsList = filterAdminClientsList;
         window.filterAdminClientsList = filterAdminClientsList;
 
         // ========== VISTA DE DETALLES DEL CLIENTE ==========
@@ -6965,6 +7004,7 @@
         window.loadClientPricesFromFirebase = loadClientPricesFromFirebase;
         window.loadClientsListAdmin = loadClientsListAdmin;
         window.loadProductsListAdmin = loadProductsListAdmin;
+        window._real_filterAdminClientsList = filterAdminClientsList;
         window.filterAdminClientsList = filterAdminClientsList;
         window.filterAdminProductsList = filterAdminProductsList;
         window.openNewClientModal = openNewClientModal;
