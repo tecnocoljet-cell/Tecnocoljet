@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 3.1.1 - setTimeout para funciones que se cargan después -->
+<!-- VERSION: 3.2.0 - STUBS iniciales para funciones - DEFINITIVO -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1582,12 +1582,15 @@
         const AIRTABLE_TABLE_NAME = 'Gestión de Clientes';
         
         // Declarar funciones globales para evitar errores de referencia
-        let loadPendingReports, loadClientsListAdmin, filterAdminClientsList;
+        // Estas se sobrescribirán con las implementaciones completas más adelante
+        let loadPendingReports = async function() { console.log('⏳ Cargando reportes...'); };
+        let loadClientsListAdmin = async function() { console.log('⏳ Cargando clientes...'); };
+        let filterAdminClientsList = function(query) { console.log('⏳ Filtrando...'); };
         
-        // Asignar a window inmediatamente para que estén disponibles
-        window.loadPendingReports = null;
-        window.loadClientsListAdmin = null;
-        window.filterAdminClientsList = null;
+        // Asignar a window inmediatamente
+        window.loadPendingReports = loadPendingReports;
+        window.loadClientsListAdmin = loadClientsListAdmin;
+        window.filterAdminClientsList = filterAdminClientsList;
         
         // Store clients data globally
         let clientsData = {};
@@ -3514,14 +3517,8 @@
                 // Load clients for equipment management
                 loadAdminClients();
                 
-                // Load pending reports - usar setTimeout para esperar a que se cargue
-                setTimeout(() => {
-                    if (typeof window.loadPendingReports === 'function') {
-                        window.loadPendingReports();
-                    } else {
-                        console.warn('⚠️ loadPendingReports aún no está definida');
-                    }
-                }, 100);
+                // Load pending reports
+                loadPendingReports();
                 
                 console.log('✅ Datos cargados desde Airtable');
             } else {
@@ -3583,12 +3580,7 @@
                 tabClientes.style.color = 'white';
                 tabClientes.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
                 document.getElementById('contentClientes').style.display = 'block';
-                if (typeof window.loadClientsListAdmin === 'function') {
-                    window.loadClientsListAdmin();
-                } else {
-                    console.warn('⚠️ loadClientsListAdmin aún no está definida');
-                    setTimeout(() => window.loadClientsListAdmin && window.loadClientsListAdmin(), 100);
-                }
+                loadClientsListAdmin();
             }
         }
 
