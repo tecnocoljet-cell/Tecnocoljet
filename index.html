@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 2.9.1 - Input de contraseña corregido -->
+<!-- VERSION: 3.0.0 - Funciones globales corregidas con expresiones de función -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1580,6 +1580,9 @@
         
         // Para compatibilidad con código anterior
         const AIRTABLE_TABLE_NAME = 'Gestión de Clientes';
+        
+        // Declarar funciones globales para evitar errores de referencia
+        let loadPendingReports, loadClientsListAdmin, filterAdminClientsList;
         
         // Store clients data globally
         let clientsData = {};
@@ -4544,7 +4547,7 @@
             }
         });
 
-        async function loadPendingReports() {
+        loadPendingReports = async function() {
             const container = document.getElementById('pendingReports');
             
             console.log('🔍 Cargando reportes pendientes...');
@@ -4689,7 +4692,7 @@
                     </div>
                 `;
             }
-        }
+        };
         window.loadPendingReports = loadPendingReports;
 
         // PDF Generation Function - IMPROVED
@@ -5507,7 +5510,7 @@
         }
 
         // ========== UI ADMIN - LISTA DE CLIENTES ==========
-        async function loadClientsListAdmin() {
+        loadClientsListAdmin = async function() {
             const container = document.getElementById('adminClientsList');
             const detailsContainer = document.getElementById('adminClientDetails');
             
@@ -5575,7 +5578,7 @@
             `;
             
             console.log('✅ Lista de clientes cargada');
-        }
+        };
         window.loadClientsListAdmin = loadClientsListAdmin;
 
         // Función para mostrar detalles de un cliente específico
@@ -5997,7 +6000,7 @@
         }
         window.deleteEquipment = deleteEquipment;
 
-        function filterAdminClientsList(query) {
+        filterAdminClientsList = function(query) {
             const clients = Object.values(clientsData);
             const filtered = clients.filter(c =>
                 c.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -6055,7 +6058,7 @@
                     `).join('')}
                 </div>
             `;
-        }
+        };
         window.filterAdminClientsList = filterAdminClientsList;
 
         // ========== VISTA DE DETALLES DEL CLIENTE ==========
