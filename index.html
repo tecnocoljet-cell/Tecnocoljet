@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 5.0.2 FINAL - Todas las funciones asignadas a window -->
+<!-- VERSION: 5.0.3 FINAL - filterAdminClientsList agregada -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -127,6 +127,16 @@
             }
         };
         
+        filterAdminClientsList = function(query) {
+            console.log('Buscando:', query);
+            // Esperar a que la función real se cargue
+            setTimeout(function() {
+                if (typeof window._filterAdminClientsListReal === 'function') {
+                    window._filterAdminClientsListReal(query);
+                }
+            }, 100);
+        };
+        
         // Asignar TODAS las funciones a window para que sean accesibles globalmente
         window.selectRole = selectRole;
         window.selectEmployeeOption = selectEmployeeOption;
@@ -134,6 +144,7 @@
         window.backToEmployeeMenu = backToEmployeeMenu;
         window.checkAdminPassword = checkAdminPassword;
         window.switchAdminTab = switchAdminTab;
+        window.filterAdminClientsList = filterAdminClientsList;
         
         console.log('✅ Funciones globales cargadas');
     </script>
@@ -6344,6 +6355,7 @@
                 </div>
             `;
         };
+        window._filterAdminClientsListReal = filterAdminClientsList;
         window.filterAdminClientsList = filterAdminClientsList;
 
         // ========== VISTA DE DETALLES DEL CLIENTE ==========
