@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 4.0.0 STABLE - Aplicación 100% funcional sin dependencias externas -->
+<!-- VERSION: 4.0.1 FINAL - ARCHIVO NUEVO SIN CACHE - tecnocoljet.html -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,12 +8,32 @@
     <!-- Definir stubs de funciones ANTES del HTML para evitar "not defined" -->
     <script>
         // Stubs temporales - se sobrescriben con implementaciones completas al final
+        console.log('✅✅✅ ARCHIVO NUEVO CARGADO - v4.0.1 FINAL ✅✅✅');
         console.log('✅ Stubs cargados en HEAD');
-        window.selectRole = function(role) { console.log('🔄 Stub selectRole:', role); };
-        window.selectEmployeeOption = function(opt) { console.log('🔄 Stub selectEmployeeOption:', opt); };
-        window.backToRoleSelector = function() { console.log('🔄 Stub backToRoleSelector'); };
-        window.checkAdminPassword = function() { console.log('🔄 Stub checkAdminPassword'); };
-        window.backToEmployeeMenu = function() { console.log('🔄 Stub backToEmployeeMenu'); };
+        
+        // Crear funciones stub que SÍ funcionan
+        window.selectRole = function(role) { 
+            console.log('🔄 Stub selectRole llamado:', role);
+            alert('Stub selectRole - Si ves esto, el archivo nuevo SÍ se cargó');
+        };
+        
+        window.selectEmployeeOption = function(opt) { 
+            console.log('🔄 Stub selectEmployeeOption:', opt); 
+        };
+        
+        window.backToRoleSelector = function() { 
+            console.log('🔄 Stub backToRoleSelector'); 
+        };
+        
+        window.checkAdminPassword = function() { 
+            console.log('🔄 Stub checkAdminPassword'); 
+        };
+        
+        window.backToEmployeeMenu = function() { 
+            console.log('🔄 Stub backToEmployeeMenu'); 
+        };
+        
+        console.log('🎯 Funciones stub creadas:', Object.keys(window).filter(k => k.includes('select') || k.includes('back') || k.includes('check')));
     </script>
     
     <!-- jsPDF for PDF generation -->
