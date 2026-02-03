@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 4.0.1 FINAL - ARCHIVO NUEVO SIN CACHE - tecnocoljet.html -->
+<!-- VERSION: 4.1.0 DEFINITIVO - Wrappers con sistema de espera -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,33 +7,44 @@
     
     <!-- Definir stubs de funciones ANTES del HTML para evitar "not defined" -->
     <script>
-        // Stubs temporales - se sobrescriben con implementaciones completas al final
-        console.log('✅✅✅ ARCHIVO NUEVO CARGADO - v4.0.1 FINAL ✅✅✅');
-        console.log('✅ Stubs cargados en HEAD');
+        console.log('✅✅✅ STUBS CARGADOS - ESPERANDO FUNCIONES REALES ✅✅✅');
         
-        // Crear funciones stub que SÍ funcionan
-        window.selectRole = function(role) { 
-            console.log('🔄 Stub selectRole llamado:', role);
-            alert('Stub selectRole - Si ves esto, el archivo nuevo SÍ se cargó');
-        };
+        // Sistema de cola: guardar llamadas hasta que las funciones reales existan
+        window._pendingCalls = [];
         
-        window.selectEmployeeOption = function(opt) { 
-            console.log('🔄 Stub selectEmployeeOption:', opt); 
-        };
+        // Crear wrapper que espera a que la función real exista
+        function createFunctionWrapper(functionName) {
+            return function(...args) {
+                console.log(`🔄 ${functionName} llamado (buscando función real...)`);
+                
+                // Intentar ejecutar la función real si ya existe
+                const realFunction = window['_real_' + functionName];
+                if (realFunction && typeof realFunction === 'function') {
+                    console.log(`✅ Ejecutando función real: ${functionName}`);
+                    return realFunction.apply(this, args);
+                }
+                
+                // Si no existe aún, esperar con setTimeout
+                console.log(`⏳ Esperando a que ${functionName} se cargue...`);
+                setTimeout(() => {
+                    const fn = window['_real_' + functionName];
+                    if (fn && typeof fn === 'function') {
+                        fn.apply(this, args);
+                    } else {
+                        console.error(`❌ ${functionName} nunca se cargó`);
+                    }
+                }, 100);
+            };
+        }
         
-        window.backToRoleSelector = function() { 
-            console.log('🔄 Stub backToRoleSelector'); 
-        };
+        // Crear wrappers para todas las funciones críticas
+        window.selectRole = createFunctionWrapper('selectRole');
+        window.selectEmployeeOption = createFunctionWrapper('selectEmployeeOption');
+        window.backToRoleSelector = createFunctionWrapper('backToRoleSelector');
+        window.checkAdminPassword = createFunctionWrapper('checkAdminPassword');
+        window.backToEmployeeMenu = createFunctionWrapper('backToEmployeeMenu');
         
-        window.checkAdminPassword = function() { 
-            console.log('🔄 Stub checkAdminPassword'); 
-        };
-        
-        window.backToEmployeeMenu = function() { 
-            console.log('🔄 Stub backToEmployeeMenu'); 
-        };
-        
-        console.log('🎯 Funciones stub creadas:', Object.keys(window).filter(k => k.includes('select') || k.includes('back') || k.includes('check')));
+        console.log('🎯 Wrappers creados para:', Object.keys(window).filter(k => k.includes('select') || k.includes('back') || k.includes('check')));
     </script>
     
     <!-- jsPDF for PDF generation -->
@@ -1737,7 +1748,10 @@
                 document.getElementById('adminPanel').style.display = 'none';
             }
         }
+        // Registrar como función real
+        window._real_selectRole = selectRole;
         window.selectRole = selectRole;
+        console.log('✅ selectRole REAL registrada');
         
         function selectEmployeeOption(option) {
             console.log('👷 Opción seleccionada:', option);
@@ -1753,12 +1767,16 @@
                 setTimeout(initSignatureCanvas, 100);
             }
         }
+        window._real_selectEmployeeOption = selectEmployeeOption;
+        window.selectEmployeeOption = selectEmployeeOption;
         
         function backToEmployeeMenu() {
             document.getElementById('employeeMenuSelection').style.display = 'block';
             document.getElementById('employeeRemisiones').style.display = 'none';
             document.getElementById('employeeReportes').style.display = 'none';
         }
+        window._real_backToEmployeeMenu = backToEmployeeMenu;
+        window.backToEmployeeMenu = backToEmployeeMenu;
         
         // ===== VARIABLES GLOBALES PARA ENTREGAS =====
         let currentRemisionId = null;
@@ -3107,6 +3125,8 @@
             document.getElementById('employeeView').style.display = 'none';
             document.getElementById('adminView').style.display = 'none';
         }
+        window._real_backToRoleSelector = backToRoleSelector;
+        window.backToRoleSelector = backToRoleSelector;
 
         function openNewEquipmentModal() {
             console.log('🆕 openNewEquipmentModal llamada');
@@ -3601,6 +3621,8 @@
                 document.getElementById('adminPassword').value = '';
             }
         }
+        window._real_checkAdminPassword = checkAdminPassword;
+        window.checkAdminPassword = checkAdminPassword;
 
         function switchAdminTab(tab) {
             // Update tab buttons
