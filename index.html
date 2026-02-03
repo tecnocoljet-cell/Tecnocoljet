@@ -1,5 +1,5 @@
 <html lang="es">
-<!-- VERSION: 5.0.1 - switchAdminTab agregada -->
+<!-- VERSION: 5.0.2 FINAL - Todas las funciones asignadas a window -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -126,6 +126,14 @@
                 }, 100);
             }
         };
+        
+        // Asignar TODAS las funciones a window para que sean accesibles globalmente
+        window.selectRole = selectRole;
+        window.selectEmployeeOption = selectEmployeeOption;
+        window.backToRoleSelector = backToRoleSelector;
+        window.backToEmployeeMenu = backToEmployeeMenu;
+        window.checkAdminPassword = checkAdminPassword;
+        window.switchAdminTab = switchAdminTab;
         
         console.log('✅ Funciones globales cargadas');
     </script>
