@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.4.0 - Pestana Productos conectada a la base Nuestros Productos (3 tablas)
+     VERSION: 7.5.0 - Productos: tablas Insumos, Repuestos y Servicios de la base principal; catalogo de remisiones alimentado de las 3 tablas
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -377,7 +377,9 @@ const CONFIG = {
       productos:  ['Productos', 'Catálogo de Productos'],
       remisiones: ['Remisiones'],
       precios:    ['Lista de precios', 'Presios por cliente', 'Precios por cliente'],
-      nuestrosProductos: ['nuestros productos', 'Nuestros productos', 'Nuestros Productos', 'NUESTROS PRODUCTOS']
+      insumos:    ['Insumos', 'Lista de insumos'],
+      repuestos:  ['Repuestos', 'Lista de repuestos'],
+      servicios:  ['Servicios', 'Lista de servicios']
     }
   }
 };
@@ -545,16 +547,43 @@ async function loadClientes(){
 }
 
 async function loadProductos(){
-  const records = await atAll('productos');
-  S.productos = records.map(r => ({
-    id: r.id,
-    codigo: String(r.fields['Código del producto'] || '').trim(),
-    nombre: r.fields['Nombre del producto'] || '',
-    unidad: r.fields['Unidad de medida'] || 'Unidad',
-    precioBase: r.fields['Precio base'] || 0,
-    observaciones: r.fields['Observaciones'] || ''
-  }));
-  return S.productos.length;
+  try {
+    const records = await atAll('productos');
+    S.productos = records.map(r => ({
+      id: r.id,
+      codigo: String(r.fields['Código del producto'] || '').trim(),
+      nombre: r.fields['Nombre del producto'] || '',
+      unidad: r.fields['Unidad de medida'] || 'Unidad',
+      precioBase: r.fields['Precio base'] || 0,
+      observaciones: r.fields['Observaciones'] || ''
+    }));
+    return S.productos.length;
+  } catch (e){
+    // No existe la tabla "Productos": construir el catálogo desde Insumos + Repuestos + Servicios
+    console.warn('Tabla Productos no existe; usando Insumos/Repuestos/Servicios como catálogo');
+    const cats = ['insumos', 'repuestos', 'servicios'];
+    const resultados = await Promise.all(cats.map(c => atAll(c).catch(() => [])));
+    S.productos = [];
+    resultados.forEach((records, i) => {
+      records.forEach(r => {
+        const f = r.fields;
+        const keys = Object.keys(f);
+        const nombreKey = ['Nombre del producto','Nombre','Producto','Servicio','Repuesto','Insumo','Descripción','Descripcion'].find(k => keys.includes(k)) || keys.find(k => typeof f[k] === 'string') || keys[0];
+        const codigoKey = keys.find(k => /c[oó]digo|^id$|referencia/i.test(k));
+        const precioKey = keys.find(k => /precio|valor|costo/i.test(k) && typeof f[k] === 'number');
+        S.productos.push({
+          id: r.id,
+          codigo: String(codigoKey ? f[codigoKey] : (f[nombreKey] || r.id)).trim(),
+          nombre: String(f[nombreKey] || 'Sin nombre'),
+          unidad: f['Unidad de medida'] || 'Unidad',
+          precioBase: precioKey ? f[precioKey] : 0,
+          observaciones: '',
+          categoria: cats[i]
+        });
+      });
+    });
+    return S.productos.length;
+  }
 }
 
 // Precios acordados de un cliente: {codigo: precio}. Intenta varias fórmulas de filtro.
@@ -1440,57 +1469,15 @@ async function downloadRemisionExcel(remisionId){
    14. ADMIN — NUESTROS PRODUCTOS (base separada con 3 tablas:
        Lista de insumos / Lista de repuestos / Lista de servicios)
    ============================================================ */
-const NP_TABLAS = { insumos: 'Lista de insumos', repuestos: 'Lista de repuestos', servicios: 'Lista de servicios' };
+const NP_TABLAS = { insumos: 'Insumos', repuestos: 'Repuestos', servicios: 'Servicios' };
 const NP_ICONOS = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
-S.npBaseId = null; S.npData = { insumos: [], repuestos: [], servicios: [] };
+S.npData = { insumos: [], repuestos: [], servicios: [] };
 S.npCampoNombre = {}; S.npCamposExtra = {};
 
-// Encuentra la base "Nuestros Productos" entre las bases a las que el token tiene acceso
-async function resolverBaseProductos(){
-  if (S.npBaseId) return S.npBaseId;
-  const res = await fetch('https://api.airtable.com/v0/meta/bases', {
-    headers: { 'Authorization': `Bearer ${CONFIG.airtable.token}` }
-  });
-  if (!res.ok) throw new Error(`No se pudo listar tus bases (HTTP ${res.status})`);
-  const data = await res.json();
-  const bases = data.bases || [];
-  const match = bases.find(b => normalizar(b.name).includes('nuestros productos')) ||
-                bases.find(b => normalizar(b.name).includes('productos'));
-  if (!match){
-    throw new Error(`El token de Airtable no tiene acceso a la base "Nuestros Productos". Bases accesibles: ${bases.map(b => b.name).join(' | ') || 'ninguna'}. SOLUCIÓN: entra a airtable.com/create/tokens, edita tu token y en "Access" agrega la base "Nuestros Productos" (o selecciona "All current and future bases").`);
-  }
-  S.npBaseId = match.id;
-  return S.npBaseId;
-}
-
-// Petición a una tabla de la base de productos (con paginación)
-async function npAll(categoria){
-  const baseId = await resolverBaseProductos();
-  let records = [], offset = '';
-  do {
-    const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(NP_TABLAS[categoria])}${offset ? '?offset=' + offset : ''}`;
-    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${CONFIG.airtable.token}` } });
-    if (!res.ok) throw new Error(`Tabla "${NP_TABLAS[categoria]}": HTTP ${res.status}`);
-    const data = await res.json();
-    records = records.concat(data.records || []);
-    offset = data.offset || '';
-  } while (offset);
-  return records;
-}
-
+// Las 3 tablas viven en la misma base principal — usamos atAll/atFetch con autodetección
+async function npAll(categoria){ return await atAll(categoria); }
 async function npWrite(categoria, path, method, body){
-  const baseId = await resolverBaseProductos();
-  const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(NP_TABLAS[categoria])}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: { 'Authorization': `Bearer ${CONFIG.airtable.token}`, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (!res.ok){
-    const d = await res.json().catch(() => ({}));
-    throw new Error(`HTTP ${res.status}: ${d.error?.message || d.error?.type || res.statusText}`);
-  }
-  return await res.json();
+  return await atFetch(categoria, path, { method, body: body ? JSON.stringify(body) : undefined });
 }
 
 async function loadNuestrosProductos(){
@@ -1515,7 +1502,7 @@ async function loadNuestrosProductos(){
     renderNuestrosProductos();
   } catch (e){
     box.innerHTML = `<p class="msg msg-error">${esc(e.message)}</p>
-      <button class="btn btn-sm" onclick="S.npBaseId=null;loadNuestrosProductos()">🔄 Reintentar</button>`;
+      <button class="btn btn-sm" onclick="loadNuestrosProductos()">🔄 Reintentar</button>`;
   }
 }
 
