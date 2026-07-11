@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.3.0 - Nueva pestana Productos (nuestros productos: insumos, repuestos, servicios)
+     VERSION: 7.3.1 - Deteccion automatica de nombres de tablas de Airtable
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -457,10 +457,34 @@ const ts = () => firebase.firestore.Timestamp.now();
 /* ============================================================
    5. API DE AIRTABLE (con reintento de nombres de tabla)
    ============================================================ */
+// Lista las tablas reales de la base (meta API) — se guarda en caché
+let _metaTablas = null;
+async function listAirtableTables(){
+  if (_metaTablas) return _metaTablas;
+  const res = await fetch(`https://api.airtable.com/v0/meta/bases/${CONFIG.airtable.baseId}/tables`, {
+    headers: { 'Authorization': `Bearer ${CONFIG.airtable.token}` }
+  });
+  if (!res.ok) throw new Error(`No se pudo leer la lista de tablas (HTTP ${res.status})`);
+  const data = await res.json();
+  _metaTablas = (data.tables || []).map(t => t.name);
+  return _metaTablas;
+}
+const normalizar = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
 async function atFetch(tablaKey, params = '', options = {}){
-  const nombres = S.tablaResuelta[tablaKey]
+  let nombres = S.tablaResuelta[tablaKey]
     ? [S.tablaResuelta[tablaKey]]
-    : CONFIG.airtable.tablas[tablaKey];
+    : [...CONFIG.airtable.tablas[tablaKey]];
+  // Resolución automática: buscar en las tablas reales de la base una que coincida (ignorando mayúsculas/tildes)
+  if (!S.tablaResuelta[tablaKey]){
+    try {
+      const reales = await listAirtableTables();
+      for (const variante of CONFIG.airtable.tablas[tablaKey]){
+        const match = reales.find(rn => normalizar(rn) === normalizar(variante));
+        if (match){ nombres = [match]; break; }
+      }
+    } catch (e){ console.warn('Meta API no disponible:', e.message); }
+  }
   let lastErr = null;
   for (const nombre of nombres){
     const url = `https://api.airtable.com/v0/${CONFIG.airtable.baseId}/${encodeURIComponent(nombre)}${params}`;
@@ -478,7 +502,14 @@ async function atFetch(tablaKey, params = '', options = {}){
       return await res.json();
     } catch (e){ lastErr = e; }
   }
-  throw lastErr || new Error(`No se pudo acceder a la tabla "${tablaKey}"`);
+  // Mensaje de error útil: incluir las tablas que sí existen
+  try {
+    const reales = await listAirtableTables();
+    throw new Error(`${lastErr?.message || 'Sin acceso'}. Tablas disponibles en tu base: ${reales.join(' | ')}`);
+  } catch (e2){
+    if (e2.message.includes('Tablas disponibles')) throw e2;
+    throw lastErr || new Error(`No se pudo acceder a la tabla "${tablaKey}"`);
+  }
 }
 
 // Trae TODOS los registros (maneja paginación de Airtable, 100 por página)
@@ -575,8 +606,11 @@ async function checkAdminPassword(){
 let baseDataPromise = null;
 function ensureBaseData(){
   if (!baseDataPromise){
-    baseDataPromise = Promise.all([loadClientes(), loadProductos()])
-      .catch(e => { baseDataPromise = null; console.error(e); alert('⚠️ Error cargando datos de Airtable: ' + e.message); throw e; });
+    baseDataPromise = (async () => {
+      await loadClientes(); // clientes es crítico
+      try { await loadProductos(); } // productos es opcional: si la tabla no existe, no rompe nada
+      catch (e){ S.productos = []; console.warn('Tabla de productos del catálogo no disponible:', e.message); }
+    })().catch(e => { baseDataPromise = null; console.error(e); alert('⚠️ Error cargando datos de Airtable: ' + e.message); throw e; });
   }
   return baseDataPromise;
 }
