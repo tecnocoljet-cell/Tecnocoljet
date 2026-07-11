@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.0.0 - Reescritura completa desde cero
+     VERSION: 7.1.0 - Clientes: carga inmediata, crear y eliminar en Airtable
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -311,7 +311,9 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
     <!-- TAB CLIENTES -->
     <div id="tabc-clientes" class="hidden">
       <div class="card">
-        <h2 style="margin-bottom:12px">👥 Gestión de Clientes</h2>
+        <h2 style="margin-bottom:12px">👥 Gestión de Clientes
+          <button class="btn btn-sm" style="float:right" onclick="openNewClientModal()">➕ Nuevo Cliente</button>
+        </h2>
         <div class="form-group"><input type="text" id="clienteBuscar" placeholder="🔍 Buscar cliente..." oninput="filterAdminClientes()"></div>
         <div id="clientesList" class="loading">Cargando clientes de Airtable...</div>
       </div>
@@ -573,7 +575,19 @@ function switchAdminTab(tab){
   });
   if (tab === 'reportes') loadPendingReports();
   if (tab === 'remisiones'){ ensureBaseData().then(() => { loadNextRemisionNumber(); loadCreatedRemisiones(); }); }
-  if (tab === 'clientes'){ ensureBaseData().then(renderClientesList); }
+  if (tab === 'clientes') loadClientesTab();
+}
+
+async function loadClientesTab(){
+  const box = $('clientesList');
+  box.innerHTML = '<div class="loading">Cargando clientes de Airtable...</div>';
+  try {
+    await ensureBaseData();
+    renderClientesList($('clienteBuscar').value.trim().toLowerCase());
+  } catch (e){
+    box.innerHTML = `<p class="msg msg-error">Error cargando Airtable: ${esc(e.message)}</p>
+      <button class="btn btn-sm" onclick="baseDataPromise=null;loadClientesTab()">🔄 Reintentar</button>`;
+  }
 }
 </script>
 
@@ -1384,12 +1398,80 @@ function renderClientesList(filtro = ''){
     .sort((a, b) => a.name.localeCompare(b.name));
   if (!lista.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin clientes</p>'; return; }
   box.innerHTML = lista.map(c => `
-    <div class="item-card" style="cursor:pointer" onclick="showClientDetails('${c.id}')">
-      <strong>🏢 ${esc(c.name)}</strong>
-      <p style="font-size:13px;color:var(--gris)">NIT: ${esc(c.documento) || '—'} · ${esc(c.ciudad) || '—'}</p>
+    <div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="cursor:pointer;flex:1" onclick="showClientDetails('${c.id}')">
+        <strong>🏢 ${esc(c.name)}</strong>
+        <p style="font-size:13px;color:var(--gris)">NIT: ${esc(c.documento) || '—'} · ${esc(c.ciudad) || '—'}</p>
+      </div>
+      <button class="btn btn-sm btn-rojo" onclick="deleteClient('${c.id}')">🗑️</button>
     </div>`).join('');
 }
 function filterAdminClientes(){ renderClientesList($('clienteBuscar').value.trim().toLowerCase()); }
+
+/* ---- Crear cliente nuevo (se guarda en Airtable) ---- */
+function openNewClientModal(){
+  openOverlay(`
+    <h2 style="margin-bottom:14px">➕ Nuevo Cliente</h2>
+    <div class="form-group"><label>Nombre del cliente *</label><input type="text" id="ncNombre" placeholder="Ej: Juan Pérez"></div>
+    <div class="form-group"><label>Empresa o razón social *</label><input type="text" id="ncEmpresa" placeholder="Ej: TECNOSA S.A.S."></div>
+    <div class="grid2">
+      <div class="form-group"><label>Documento / NIT</label><input type="text" id="ncNit" placeholder="Ej: 900123456-7"></div>
+      <div class="form-group"><label>Teléfono</label><input type="text" id="ncTelefono" placeholder="Ej: 3001234567"></div>
+    </div>
+    <div class="form-group"><label>Correo electrónico</label><input type="email" id="ncEmail" placeholder="Ej: contacto@empresa.com"></div>
+    <div class="grid2">
+      <div class="form-group"><label>Ciudad</label><input type="text" id="ncCiudad" placeholder="Ej: Bogotá"></div>
+      <div class="form-group"><label>Dirección</label><input type="text" id="ncDireccion" placeholder="Ej: Calle 1 # 2-3"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button class="btn" style="flex:1" id="ncSaveBtn" onclick="saveNewClient()">💾 Crear Cliente</button>
+      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
+    </div>`);
+}
+
+async function saveNewClient(){
+  const nombre = $('ncNombre').value.trim();
+  const empresa = $('ncEmpresa').value.trim();
+  if (!nombre && !empresa){ alert('⚠️ Escribe al menos el nombre o la razón social'); return; }
+  const btn = $('ncSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const fields = {
+    'Nombre del cliente': nombre || empresa,
+    'Empresa o razón social': empresa || nombre
+  };
+  if ($('ncNit').value.trim()) fields['Documento / NIT'] = $('ncNit').value.trim();
+  if ($('ncTelefono').value.trim()) fields['Teléfono'] = $('ncTelefono').value.trim();
+  if ($('ncEmail').value.trim()) fields['Correo electrónico'] = $('ncEmail').value.trim();
+  if ($('ncCiudad').value.trim()) fields['Ciudad'] = $('ncCiudad').value.trim();
+  if ($('ncDireccion').value.trim()) fields['Dirección'] = $('ncDireccion').value.trim();
+  try {
+    const res = await atFetch('clientes', '', { method: 'POST', body: JSON.stringify({ fields }) });
+    S.clientes[res.id] = {
+      id: res.id, airtableId: res.id,
+      name: fields['Nombre del cliente'], razonSocial: fields['Empresa o razón social'],
+      documento: fields['Documento / NIT'] || '', telefono: fields['Teléfono'] || '',
+      email: fields['Correo electrónico'] || '', ciudad: fields['Ciudad'] || '', direccion: fields['Dirección'] || ''
+    };
+    closeOverlay();
+    flash('adminMsg', `✅ Cliente "${esc(fields['Nombre del cliente'])}" creado en Airtable`);
+    renderClientesList($('clienteBuscar').value.trim().toLowerCase());
+  } catch (e){
+    alert('❌ No se pudo crear en Airtable: ' + e.message + '\n\nSi el error menciona un campo, dime cuál para ajustar los nombres.');
+  } finally { btn.disabled = false; btn.textContent = '💾 Crear Cliente'; }
+}
+
+async function deleteClient(clientId){
+  const c = S.clientes[clientId];
+  if (!c) return;
+  if (!confirm(`⚠️ ¿Eliminar el cliente "${c.name}"?\n\nSe borrará de tu Airtable. Esta acción no se puede deshacer.`)) return;
+  if (!confirm(`Confirma de nuevo: eliminar "${c.name}" definitivamente.`)) return;
+  try {
+    await atFetch('clientes', `/${clientId}`, { method: 'DELETE' });
+    delete S.clientes[clientId];
+    $('clienteDetalle').innerHTML = '';
+    flash('adminMsg', `🗑️ Cliente "${esc(c.name)}" eliminado de Airtable`);
+    renderClientesList($('clienteBuscar').value.trim().toLowerCase());
+  } catch (e){ alert('❌ No se pudo eliminar: ' + e.message); }
+}
 
 async function showClientDetails(clientId){
   const c = S.clientes[clientId];
