@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.2.0 - Contador de clientes agregado
+     VERSION: 7.3.0 - Nueva pestana Productos (nuestros productos: insumos, repuestos, servicios)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -260,6 +260,7 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <button class="tab active" id="tab-reportes" onclick="switchAdminTab('reportes')">📋 Reportes</button>
       <button class="tab" id="tab-remisiones" onclick="switchAdminTab('remisiones')">📦 Remisiones</button>
       <button class="tab" id="tab-clientes" onclick="switchAdminTab('clientes')">👥 Clientes</button>
+      <button class="tab" id="tab-productos" onclick="switchAdminTab('productos')">🛒 Productos</button>
     </div>
 
     <!-- TAB REPORTES -->
@@ -305,6 +306,17 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <div class="card">
         <h2 style="margin-bottom:12px">🗂️ Remisiones Creadas</h2>
         <div id="remisionesList" class="loading">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- TAB PRODUCTOS (nuestros productos) -->
+    <div id="tabc-productos" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">🛒 Nuestros Productos
+          <button class="btn btn-sm" style="float:right" onclick="openNewProductoModal()">➕ Nuevo Producto</button>
+        </h2>
+        <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
+        <div id="nuestrosProductosList" class="loading">Cargando productos de Airtable...</div>
       </div>
     </div>
 
@@ -364,7 +376,8 @@ const CONFIG = {
       clientes:   ['Clientes', 'Gestión de Clientes'],
       productos:  ['Productos', 'Catálogo de Productos'],
       remisiones: ['Remisiones'],
-      precios:    ['Lista de precios', 'Presios por cliente', 'Precios por cliente']
+      precios:    ['Lista de precios', 'Presios por cliente', 'Precios por cliente'],
+      nuestrosProductos: ['nuestros productos', 'Nuestros productos', 'Nuestros Productos', 'NUESTROS PRODUCTOS']
     }
   }
 };
@@ -569,13 +582,14 @@ function ensureBaseData(){
 }
 
 function switchAdminTab(tab){
-  ['reportes', 'remisiones', 'clientes'].forEach(t => {
+  ['reportes', 'remisiones', 'clientes', 'productos'].forEach(t => {
     $('tab-' + t).classList.toggle('active', t === tab);
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
   if (tab === 'remisiones'){ ensureBaseData().then(() => { loadNextRemisionNumber(); loadCreatedRemisiones(); }); }
   if (tab === 'clientes') loadClientesTab();
+  if (tab === 'productos') loadNuestrosProductos();
 }
 
 async function loadClientesTab(){
@@ -1386,6 +1400,140 @@ async function downloadRemisionExcel(remisionId){
     const filename = `REMISION_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.xlsx`;
     XLSX.writeFile(wb, filename);
   } catch (e){ alert('❌ Error generando Excel: ' + e.message); }
+}
+
+/* ============================================================
+   14. ADMIN — NUESTROS PRODUCTOS (insumos, repuestos, servicios)
+   ============================================================ */
+const NP_CATEGORIAS = ['insumos', 'repuestos', 'servicios'];
+const NP_ICONOS = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
+S.npRecords = []; S.npCampoNombre = null; S.npCampoCategoria = null; S.npCamposExtra = []; S.npCategoriasReales = {};
+
+async function loadNuestrosProductos(){
+  const box = $('nuestrosProductosList');
+  box.innerHTML = '<div class="loading">Cargando productos de Airtable...</div>';
+  try {
+    S.npRecords = await atAll('nuestrosProductos');
+    detectarCamposNP();
+    renderNuestrosProductos();
+  } catch (e){
+    box.innerHTML = `<p class="msg msg-error">Error cargando la tabla "nuestros productos": ${esc(e.message)}</p>
+      <p style="font-size:13px;color:var(--gris)">Verifica que la tabla exista en tu Airtable y que el token tenga acceso a ella.</p>
+      <button class="btn btn-sm" onclick="loadNuestrosProductos()">🔄 Reintentar</button>`;
+  }
+}
+
+// Detecta automáticamente qué columna es la categoría y cuál el nombre
+function detectarCamposNP(){
+  const campos = {};
+  S.npRecords.forEach(r => Object.keys(r.fields).forEach(k => { campos[k] = campos[k] || []; campos[k].push(r.fields[k]); }));
+  const nombres = Object.keys(campos);
+  // Campo categoría: el que sus valores sean insumos/repuestos/servicios
+  S.npCampoCategoria = null; S.npCategoriasReales = {};
+  for (const k of nombres){
+    const vals = campos[k].filter(v => typeof v === 'string');
+    const matches = vals.filter(v => NP_CATEGORIAS.includes(v.trim().toLowerCase()));
+    if (vals.length && matches.length >= vals.length * 0.7){
+      S.npCampoCategoria = k;
+      vals.forEach(v => { S.npCategoriasReales[v.trim().toLowerCase()] = v.trim(); });
+      break;
+    }
+  }
+  // Campo nombre: preferir nombres típicos; si no, el primer campo de texto que no sea la categoría
+  const preferidos = ['Nombre del producto', 'Nombre', 'Producto', 'Descripción', 'Descripcion'];
+  S.npCampoNombre = preferidos.find(p => nombres.includes(p)) ||
+    nombres.find(k => k !== S.npCampoCategoria && campos[k].some(v => typeof v === 'string')) || nombres[0];
+  // Campos extra: los demás campos primitivos (texto/número), máx 4
+  S.npCamposExtra = nombres.filter(k =>
+    k !== S.npCampoNombre && k !== S.npCampoCategoria &&
+    campos[k].every(v => typeof v === 'string' || typeof v === 'number')
+  ).slice(0, 4);
+}
+
+function renderNuestrosProductos(){
+  const box = $('nuestrosProductosList');
+  const filtro = ($('npBuscar').value || '').trim().toLowerCase();
+  const total = S.npRecords.length;
+  if (!total){
+    box.innerHTML = `<div style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:9px;padding:9px 14px;font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">🛒 0 productos</div>
+      <p style="text-align:center;color:var(--gris);padding:14px">Sin productos — crea el primero con ➕</p>`;
+    return;
+  }
+  const nombre = r => String(r.fields[S.npCampoNombre] ?? 'Sin nombre');
+  const cat = r => S.npCampoCategoria ? String(r.fields[S.npCampoCategoria] || '').trim().toLowerCase() : '';
+  const filtrados = S.npRecords.filter(r => !filtro || nombre(r).toLowerCase().includes(filtro));
+
+  let html = `<div style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:9px;padding:9px 14px;font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">
+    🛒 ${total} producto${total === 1 ? '' : 's'} en total${filtro ? ` · mostrando ${filtrados.length}` : ''}
+  </div>`;
+
+  const grupos = [...NP_CATEGORIAS, 'otros'];
+  grupos.forEach(g => {
+    const items = filtrados.filter(r => g === 'otros' ? !NP_CATEGORIAS.includes(cat(r)) : cat(r) === g)
+      .sort((a, b) => nombre(a).localeCompare(nombre(b)));
+    if (!items.length) return;
+    const titulo = g === 'otros' ? '📁 Sin categoría' : `${NP_ICONOS[g]} ${g.charAt(0).toUpperCase() + g.slice(1)}`;
+    html += `<h3 style="margin:16px 0 8px;color:var(--verde-oscuro)">${titulo} <span style="color:var(--gris);font-weight:400;font-size:14px">(${items.length})</span></h3>`;
+    html += items.map(r => {
+      const extras = S.npCamposExtra.map(k => r.fields[k] != null && r.fields[k] !== '' ? `${esc(k)}: ${typeof r.fields[k] === 'number' && /precio|valor|costo/i.test(k) ? money(r.fields[k]) : esc(r.fields[k])}` : null).filter(Boolean).join(' · ');
+      return `<div style="background:#f9fafb;padding:10px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-left:3px solid var(--verde)">
+        <span><strong>${esc(nombre(r))}</strong>${extras ? '<br><span style="color:var(--gris);font-size:12px">' + extras + '</span>' : ''}</span>
+        <button class="btn btn-sm btn-rojo" onclick="deleteNuestroProducto('${r.id}')">🗑️</button>
+      </div>`;
+    }).join('');
+  });
+  box.innerHTML = html;
+}
+
+function openNewProductoModal(){
+  const catOpciones = NP_CATEGORIAS.map(c => {
+    const real = S.npCategoriasReales[c] || (c.charAt(0).toUpperCase() + c.slice(1));
+    return `<option value="${esc(real)}">${NP_ICONOS[c]} ${esc(real)}</option>`;
+  }).join('');
+  const extras = S.npCamposExtra.map((k, i) =>
+    `<div class="form-group"><label>${esc(k)}</label><input type="text" id="npx${i}" placeholder="Opcional"></div>`).join('');
+  openOverlay(`
+    <h2 style="margin-bottom:14px">➕ Nuevo Producto</h2>
+    <div class="form-group"><label>${esc(S.npCampoNombre || 'Nombre del producto')} *</label><input type="text" id="npNombre" placeholder="Ej: Tinta negra 500ml"></div>
+    ${S.npCampoCategoria ? `<div class="form-group"><label>${esc(S.npCampoCategoria)} *</label><select id="npCategoria">${catOpciones}</select></div>` : ''}
+    ${extras}
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button class="btn" style="flex:1" id="npSaveBtn" onclick="saveNuestroProducto()">💾 Crear Producto</button>
+      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
+    </div>`);
+}
+
+async function saveNuestroProducto(){
+  const nombre = $('npNombre').value.trim();
+  if (!nombre){ alert('⚠️ Escribe el nombre del producto'); return; }
+  const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const fields = { [S.npCampoNombre || 'Nombre del producto']: nombre };
+  if (S.npCampoCategoria) fields[S.npCampoCategoria] = $('npCategoria').value;
+  S.npCamposExtra.forEach((k, i) => {
+    const v = $('npx' + i).value.trim();
+    if (v) fields[k] = isNaN(Number(v.replace(/[.,$\s]/g, ''))) || !/precio|valor|costo|cantidad/i.test(k) ? v : Number(v.replace(/[.,$\s]/g, ''));
+  });
+  try {
+    const res = await atFetch('nuestrosProductos', '', { method: 'POST', body: JSON.stringify({ fields }) });
+    S.npRecords.push(res);
+    closeOverlay();
+    flash('adminMsg', `✅ Producto "${esc(nombre)}" creado en Airtable`);
+    renderNuestrosProductos();
+  } catch (e){
+    alert('❌ No se pudo crear en Airtable: ' + e.message);
+  } finally { btn.disabled = false; btn.textContent = '💾 Crear Producto'; }
+}
+
+async function deleteNuestroProducto(recordId){
+  const r = S.npRecords.find(x => x.id === recordId);
+  const nombre = r ? String(r.fields[S.npCampoNombre] || 'este producto') : 'este producto';
+  if (!confirm(`⚠️ ¿Eliminar "${nombre}" de tu Airtable?\n\nEsta acción no se puede deshacer.`)) return;
+  try {
+    await atFetch('nuestrosProductos', `/${recordId}`, { method: 'DELETE' });
+    S.npRecords = S.npRecords.filter(x => x.id !== recordId);
+    flash('adminMsg', `🗑️ Producto "${esc(nombre)}" eliminado`);
+    renderNuestrosProductos();
+  } catch (e){ alert('❌ No se pudo eliminar: ' + e.message); }
 }
 
 /* ============================================================
