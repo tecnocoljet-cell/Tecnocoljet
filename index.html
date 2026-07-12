@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.3.0 - Sincronizacion inteligente con la tabla Remisiones de Airtable + PDF con direcciones largas envueltas
+     VERSION: 8.3.1 - Deteccion ampliada de la columna de fecha en Remisiones
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1456,7 +1456,12 @@ async function createRemision(){
       poner(buscarCol(/productos/), productosTexto);
       poner(buscarCol(/precio|valor.*venta|total/), Math.round(t.precioTotal));
       poner(buscarCol(/estado/), 'Pendiente');
-      col = buscarCol(/fecha.*(creacion|remision)|^fecha$/); poner(col, col && col.type === 'date' ? fechaCreacion.split('T')[0] : fechaCreacion);
+      // Fecha: por nombre parecido; si no, cualquier columna tipo fecha que no sea la de entrega
+      const noEscribible = ['createdTime', 'lastModifiedTime', 'formula', 'rollup', 'count', 'autoNumber'];
+      col = buscarCol(/fecha.*(creacion|remision|facturacion)|^fecha$|^f\.? ?(creacion|remision|facturacion)/);
+      if (col && noEscribible.includes(col.type)) col = null;
+      if (!col) col = camposTabla.find(f => ['date', 'dateTime'].includes(f.type) && !/entrega/.test(normalizar(f.name)));
+      poner(col, col && col.type === 'date' ? fechaCreacion.split('T')[0] : fechaCreacion);
       poner(buscarCol(/factura/), $('remFactura').value || '');
       poner(buscarCol(/forma.*pago|pago/), $('remFormaPago').value || '');
       poner(buscarCol(/observa/), $('remObservaciones').value || '');
