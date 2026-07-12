@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.11.0 - Precios estandar de todos los productos + precios acordados por cliente bloqueados
+     VERSION: 7.12.0 - Precios acordados amarrados por enlace directo de Airtable (Lista de precios)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -651,7 +651,8 @@ async function loadPreciosCliente(cliente){
       }));
     } catch (e){ console.warn('Carga completa de precios falló:', e.message); }
   }
-  const porCodigo = {}, porNombre = {};
+  const porCodigo = {}, porNombre = {}, porId = {};
+  const esRecordId = v => typeof v === 'string' && /^rec[a-zA-Z0-9]{14}$/.test(v);
   records.forEach(r => {
     const f = r.fields;
     const keys = Object.keys(f);
@@ -659,23 +660,41 @@ async function loadPreciosCliente(cliente){
     const precio = precioKey ? parsePrecio(f[precioKey]) : 0;
     if (!precio) return;
     const codigoKey = keys.find(k => /^id$|c[oó]digo|referencia/i.test(k));
-    const codigo = codigoKey ? String(f[codigoKey]).trim() : '';
-    const prodKey = keys.find(k => /producto|insumo|repuesto|servicio|art[ií]culo/i.test(k) && !/precio/i.test(k));
-    let prodNombre = prodKey ? f[prodKey] : '';
-    if (Array.isArray(prodNombre)) prodNombre = prodNombre[0] || '';
-    prodNombre = String(prodNombre);
+    const codigo = codigoKey && !esRecordId(String(f[codigoKey])) ? String(f[codigoKey]).trim() : '';
+    // Campo Producto: puede ser texto o un ENLACE a las tablas de productos (viene como rec...)
+    const prodKey = keys.find(k => /producto|insumo|repuesto|servicio|art[ií]culo/i.test(k) && !/precio/i.test(k) && !/cliente/i.test(k));
+    let valoresProd = prodKey ? f[prodKey] : [];
+    if (!Array.isArray(valoresProd)) valoresProd = [valoresProd];
+    let prodNombre = '';
+    valoresProd.forEach(v => {
+      if (esRecordId(v)){
+        // Enlace directo: amarrar por el id del producto en Insumos/Repuestos/Servicios
+        const item0 = { precio, nombre: '' };
+        porId[v] = item0;
+        const prod = S.productos.find(p => p.id === v);
+        if (prod){
+          item0.nombre = prod.nombre;
+          if (!prodNombre) prodNombre = prod.nombre;
+          if (prod.codigo) porCodigo[prod.codigo] = item0;
+          porNombre[normalizar(prod.nombre)] = item0;
+        }
+      } else if (v != null && String(v).trim()){
+        prodNombre = String(v).trim();
+      }
+    });
     const item = { precio, nombre: prodNombre || codigo };
-    if (codigo) porCodigo[codigo] = item;
-    if (prodNombre) porNombre[normalizar(prodNombre)] = item;
+    if (codigo) porCodigo[codigo] = porCodigo[codigo] || item;
+    if (prodNombre) porNombre[normalizar(prodNombre)] = porNombre[normalizar(prodNombre)] || item;
   });
-  return { porCodigo, porNombre };
+  return { porCodigo, porNombre, porId };
 }
 
-// Busca el precio acordado de un producto: primero por código, luego por nombre
+// Busca el precio acordado de un producto: por enlace directo, luego nombre, luego código
 function precioAcordadoDe(p){
   if (!S.remPrecios) return null;
-  return (p.codigo && S.remPrecios.porCodigo[p.codigo]) ||
-         S.remPrecios.porNombre[normalizar(p.nombre)] || null;
+  return S.remPrecios.porId?.[p.id] ||
+         S.remPrecios.porNombre[normalizar(p.nombre)] ||
+         (p.codigo && S.remPrecios.porCodigo[p.codigo]) || null;
 }
 
 /* ============================================================
@@ -1278,7 +1297,7 @@ async function selectRemCliente(id){
   $('remProdHint').textContent = '(cargando precios del cliente...)';
   renderRemProductos();
   S.remPrecios = await loadPreciosCliente(S.remCliente);
-  const n = Math.max(Object.keys(S.remPrecios.porCodigo).length, Object.keys(S.remPrecios.porNombre).length);
+  const n = Math.max(Object.keys(S.remPrecios.porCodigo).length, Object.keys(S.remPrecios.porNombre).length, Object.keys(S.remPrecios.porId || {}).length);
   $('remProdBuscar').disabled = false;
   $('remProdHint').textContent = n
     ? `(${n} producto${n === 1 ? '' : 's'} con precio acordado ⭐ para este cliente)`
@@ -1831,8 +1850,10 @@ async function loadClientPrecios(c){
     const precios = await loadPreciosCliente(c);
     // Unir por código y por nombre sin duplicar
     const vistos = new Set(); const items = [];
-    Object.entries(precios.porCodigo).forEach(([codigo, p]) => { items.push({ codigo, ...p }); vistos.add(p.nombre + '|' + p.precio); });
-    Object.values(precios.porNombre).forEach(p => { if (!vistos.has(p.nombre + '|' + p.precio)) items.push({ codigo: '', ...p }); });
+    const agregar = (codigo, p) => { const clave = (p.nombre || '') + '|' + p.precio; if (vistos.has(clave)) return; vistos.add(clave); items.push({ codigo, nombre: p.nombre || 'Producto vinculado', precio: p.precio }); };
+    Object.entries(precios.porCodigo).forEach(([codigo, p]) => agregar(codigo, p));
+    Object.values(precios.porNombre).forEach(p => agregar('', p));
+    Object.values(precios.porId || {}).forEach(p => agregar('', p));
     if (!items.length){ box.innerHTML = '<p style="color:var(--gris);font-size:13px">Sin precios personalizados en Airtable</p>'; return; }
     box.innerHTML = items.map(p => `
       <div style="display:flex;justify-content:space-between;background:#f9fafb;padding:9px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;border-left:3px solid var(--verde)">
