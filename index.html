@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.12.0 - Precios acordados amarrados por enlace directo de Airtable (Lista de precios)
+     VERSION: 8.0.0 - Remisiones en PDF con formato TECNOCOLJET mejorado (Excel disponible como secundario)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -307,7 +307,7 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
             <span>🚫 Remisión <strong>EXENTA de IVA</strong> (no se cobrará el 19%)</span>
           </label>
         </div>
-        <button class="btn btn-block" id="btnCrearRemision" onclick="createRemision()">📦 Crear Remisión (genera Excel)</button>
+        <button class="btn btn-block" id="btnCrearRemision" onclick="createRemision()">📦 Crear Remisión (genera PDF)</button>
       </div>
       <div class="card">
         <h2 style="margin-bottom:12px">🗂️ Remisiones Creadas</h2>
@@ -1423,7 +1423,7 @@ async function createRemision(){
       alert('⚠️ La remisión se guardó en el sistema pero NO en Airtable: ' + e.message);
     }
     flash('adminMsg', `✅ Remisión #${numero} creada`);
-    await downloadRemisionExcel(docRef.id);
+    await generateRemisionPDF(docRef.id);
     // Limpiar
     S.remCliente = null; S.remProductos = []; S.remPrecios = null;
     $('remClienteSel').innerHTML = ''; $('remCreador').value = ''; $('remRespEntrega').value = '';
@@ -1433,7 +1433,7 @@ async function createRemision(){
     renderRemProductos();
     loadNextRemisionNumber(); loadCreatedRemisiones();
   } catch (e){ alert('❌ Error creando remisión: ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = '📦 Crear Remisión (genera Excel)'; }
+  finally { btn.disabled = false; btn.textContent = '📦 Crear Remisión (genera PDF)'; }
 }
 
 async function loadCreatedRemisiones(){
@@ -1455,7 +1455,7 @@ async function loadCreatedRemisiones(){
         ${r.fotoEntrega ? `<img src="${r.fotoEntrega}" style="max-width:110px;border-radius:8px;margin:4px 0">` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm btn-azul" onclick="viewRemisionDetails('${d.id}')">👁️ Ver</button>
-          <button class="btn btn-sm" onclick="downloadRemisionExcel('${d.id}')">📥 Excel</button>
+          <button class="btn btn-sm" onclick="generateRemisionPDF('${d.id}')">📄 PDF</button>
           <button class="btn btn-sm btn-rojo" onclick="deleteRemision('${d.id}','${r.airtableId || ''}')">🗑️</button>
         </div>
       </div>`;
@@ -1480,7 +1480,8 @@ async function viewRemisionDetails(id){
     ${r.motivoNoEntrega ? `<p style="color:var(--rojo)"><strong>Motivo no entrega:</strong> ${esc(r.motivoNoEntrega)}</p>` : ''}
     ${r.fotoEntrega ? `<p><strong>Foto de entrega:</strong></p><img src="${r.fotoEntrega}" style="max-width:100%;border-radius:10px">` : ''}
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn" style="flex:1" onclick="downloadRemisionExcel('${id}')">📥 Excel</button>
+      <button class="btn" style="flex:1" onclick="generateRemisionPDF('${id}')">📄 PDF</button>
+      <button class="btn btn-azul" style="flex:1" onclick="downloadRemisionExcel('${id}')">📥 Excel</button>
       <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cerrar</button>
     </div>`);
 }
@@ -1499,7 +1500,133 @@ async function deleteRemision(firebaseId, airtableId){
 }
 
 /* ============================================================
-   12. EXCEL DE REMISIÓN (formato TECNOCOLJET, 42 filas x 10 col)
+   12. PDF DE REMISIÓN (formato TECNOCOLJET mejorado)
+   ============================================================ */
+async function generateRemisionPDF(remisionId){
+  try {
+    const doc = await db.collection('remisiones').doc(remisionId).get();
+    if (!doc.exists){ alert('❌ Remisión no encontrada'); return; }
+    const r = doc.data();
+    const c = S.clientes[r.clientId] || {};
+    const productos = r.productos || [];
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    const W = pdf.internal.pageSize.getWidth();
+    const VERDE = [107, 168, 62], VERDE_OSC = [74, 124, 44], GRIS = [107, 114, 128];
+
+    // ===== Encabezado =====
+    pdf.setFillColor(...VERDE); pdf.rect(0, 0, W, 30, 'F');
+    pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(19);
+    pdf.text('TECNOCOLJET S.A.S.', 12, 13);
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal');
+    pdf.text(`NIT ${CONFIG.empresa.nit} · ${CONFIG.empresa.regimen} · ${CONFIG.empresa.ciudad}`, 12, 20);
+    pdf.text('Sistemas de impresión industrial e inyección de tinta', 12, 25);
+    // Caja de número de remisión
+    pdf.setFillColor(255); pdf.roundedRect(W - 68, 5, 56, 20, 2, 2, 'F');
+    pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
+    pdf.text('REMISIÓN', W - 40, 12, { align: 'center' });
+    pdf.setFontSize(15);
+    pdf.text('N° ' + String(r.numero), W - 40, 20, { align: 'center' });
+
+    // ===== Datos del cliente y fecha =====
+    let y = 39;
+    pdf.setTextColor(40); pdf.setFontSize(9);
+    const fecha = r.createdAt ? r.createdAt.toDate() : new Date();
+    const fechaTxt = fecha.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+    pdf.setFillColor(240, 249, 240); pdf.roundedRect(10, y - 5, W - 20, 32, 2, 2, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...VERDE_OSC);
+    pdf.text('DATOS DEL CLIENTE', 14, y);
+    pdf.setTextColor(40);
+    const linea = (label, valor, x, yy) => {
+      pdf.setFont('helvetica', 'bold'); pdf.text(label, x, yy);
+      pdf.setFont('helvetica', 'normal'); pdf.text(String(valor || '—'), x + 26, yy);
+    };
+    linea('Razón social:', c.razonSocial || r.clientName, 14, y + 6);
+    linea('NIT:', c.documento, 14, y + 12);
+    linea('Dirección:', c.direccion, 14, y + 18);
+    linea('Ciudad:', c.ciudad, 14, y + 24);
+    linea('Teléfono:', c.telefono, 115, y + 12);
+    linea('F. Remisión:', fechaTxt, 115, y + 6);
+    if (r.formaPago) linea('F. de pago:', r.formaPago, 115, y + 18);
+    if (r.facturaElectronica) linea('Factura:', r.facturaElectronica, 115, y + 24);
+    y += 34;
+
+    // ===== Tabla de productos =====
+    pdf.autoTable({
+      startY: y,
+      head: [['CÓDIGO', 'BODEGA', 'DESCRIPCIÓN', 'CANT.', 'V/ UNIT', 'V/ TOTAL']],
+      body: productos.map(p => [
+        p.codigo || '—', '1', p.nombre, String(p.cantidad),
+        money(p.precioUnitario), money(p.cantidad * p.precioUnitario)
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: VERDE, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9, textColor: 40 },
+      columnStyles: {
+        0: { cellWidth: 22 }, 1: { cellWidth: 18, halign: 'center' }, 2: { cellWidth: 'auto' },
+        3: { cellWidth: 16, halign: 'center' }, 4: { cellWidth: 26, halign: 'right' }, 5: { cellWidth: 28, halign: 'right' }
+      },
+      margin: { left: 10, right: 10 }
+    });
+    y = pdf.lastAutoTable.finalY + 4;
+
+    // ===== Totales (formato contable completo) =====
+    const totalProductos = productos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
+    const subtotal = typeof r.subtotal === 'number' ? r.subtotal : totalProductos;
+    const iva = typeof r.iva === 'number' ? r.iva : Math.round(subtotal * CONFIG.iva);
+    const total = typeof r.precioTotal === 'number' ? r.precioTotal : subtotal + iva;
+    const filas = [
+      ['TOTAL PRODUCTOS', money(totalProductos)],
+      ['DESCUENTOS', money(0)],
+      ['SUBTOTAL', money(subtotal)],
+      [r.exentaIva ? 'IVA (EXENTA)' : 'IVA 19%', money(iva)],
+      ['RTE FUENTE', money(0)], ['RTE IVA', money(0)], ['RTE ICA', money(0)]
+    ];
+    pdf.autoTable({
+      startY: y,
+      body: filas,
+      theme: 'plain',
+      bodyStyles: { fontSize: 9, textColor: 60 },
+      columnStyles: { 0: { halign: 'right', fontStyle: 'bold', cellWidth: 60 }, 1: { halign: 'right', cellWidth: 32 } },
+      margin: { left: W - 102, right: 10 }
+    });
+    y = pdf.lastAutoTable.finalY + 2;
+    pdf.setFillColor(...VERDE); pdf.roundedRect(W - 102, y, 92, 10, 1.5, 1.5, 'F');
+    pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
+    pdf.text('TOTAL FACTURADO', W - 98, y + 7);
+    pdf.text(money(total), W - 14, y + 7, { align: 'right' });
+    y += 16;
+
+    if (r.observaciones){
+      pdf.setTextColor(...GRIS); pdf.setFontSize(9); pdf.setFont('helvetica', 'italic');
+      const obs = pdf.splitTextToSize('Observaciones: ' + r.observaciones, W - 24);
+      pdf.text(obs, 12, y); y += obs.length * 4.5 + 4;
+    }
+
+    // ===== Firmas =====
+    const yf = Math.max(y + 18, 250);
+    pdf.setDrawColor(120); pdf.setTextColor(40); pdf.setFontSize(9);
+    pdf.line(18, yf, 88, yf); pdf.line(122, yf, 192, yf);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('TECNOCOLJET — Elaborado', 53, yf + 5, { align: 'center' });
+    pdf.text('RECIBE CONFORME', 157, yf + 5, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...GRIS);
+    if (r.responsable) pdf.text(String(r.responsable), 53, yf + 10, { align: 'center' });
+    pdf.text('Firma y sello', 157, yf + 10, { align: 'center' });
+    if (r.responsableEntrega){ pdf.text('Entrega: ' + r.responsableEntrega, 53, yf + 15, { align: 'center' }); }
+
+    // Pie
+    pdf.setFontSize(7.5); pdf.setTextColor(...GRIS);
+    pdf.text(`Documento generado por el Sistema Operativo Empresarial TECNOCOLJET · ${new Date().toLocaleString('es-CO')}`, W / 2, 290, { align: 'center' });
+
+    const filename = `REMISION_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.pdf`;
+    pdf.save(filename);
+    return filename;
+  } catch (e){ alert('❌ Error generando PDF: ' + e.message); }
+}
+
+/* ============================================================
+   12b. EXCEL DE REMISIÓN (formato TECNOCOLJET, 42 filas x 10 col)
    ============================================================ */
 async function downloadRemisionExcel(remisionId){
   try {
