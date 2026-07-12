@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.7.0 - Productos ordenados por numero de codigo con etiqueta visible
+     VERSION: 7.8.0 - Buscador de remisiones usa los productos de la pestana Productos (Insumos, Repuestos, Servicios)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -562,43 +562,43 @@ async function loadClientes(){
 }
 
 async function loadProductos(){
-  try {
-    const records = await atAll('productos');
-    S.productos = records.map(r => ({
-      id: r.id,
-      codigo: String(r.fields['Código del producto'] || '').trim(),
-      nombre: r.fields['Nombre del producto'] || '',
-      unidad: r.fields['Unidad de medida'] || 'Unidad',
-      precioBase: r.fields['Precio base'] || 0,
-      observaciones: r.fields['Observaciones'] || ''
-    }));
-    return S.productos.length;
-  } catch (e){
-    // No existe la tabla "Productos": construir el catálogo desde Insumos + Repuestos + Servicios
-    console.warn('Tabla Productos no existe; usando Insumos/Repuestos/Servicios como catálogo');
-    const cats = ['insumos', 'repuestos', 'servicios'];
-    const resultados = await Promise.all(cats.map(c => atAll(c).catch(() => [])));
-    S.productos = [];
-    resultados.forEach((records, i) => {
-      records.forEach(r => {
-        const f = r.fields;
-        const keys = Object.keys(f);
-        const nombreKey = ['Nombre del producto','Nombre','Producto','Servicio','Repuesto','Insumo','Descripción','Descripcion'].find(k => keys.includes(k)) || keys.find(k => typeof f[k] === 'string') || keys[0];
-        const codigoKey = keys.find(k => /c[oó]digo|^id$|referencia/i.test(k));
-        const precioKey = keys.find(k => /precio|valor|costo/i.test(k) && typeof f[k] === 'number');
-        S.productos.push({
-          id: r.id,
-          codigo: String(codigoKey ? f[codigoKey] : (f[nombreKey] || r.id)).trim(),
-          nombre: String(f[nombreKey] || 'Sin nombre'),
-          unidad: f['Unidad de medida'] || 'Unidad',
-          precioBase: precioKey ? f[precioKey] : 0,
-          observaciones: '',
-          categoria: cats[i]
-        });
+  // El catálogo de remisiones son las mismas 3 tablas de la pestaña Productos
+  const cats = ['insumos', 'repuestos', 'servicios'];
+  const resultados = await Promise.all(cats.map(c => atAll(c).catch(e => { console.warn('Tabla', c, 'no disponible:', e.message); return []; })));
+  S.productos = [];
+  for (let i = 0; i < cats.length; i++){
+    const cat = cats[i];
+    // Usar el esquema oficial para identificar columnas de nombre, código y precio
+    let nombreKey = null, codigoKey = null, precioKey = null;
+    try {
+      const schema = await getTableSchema(S.tablaResuelta[cat] || CONFIG.airtable.tablas[cat][0]);
+      if (schema && schema.length){
+        nombreKey = (schema.find(f => f.primary) || schema[0]).name;
+        codigoKey = (schema.find(f => /c[oó]digo/i.test(f.name)) || schema.find(f => /referencia|^id$/i.test(f.name)))?.name || null;
+        precioKey = schema.find(f => /precio|valor|costo/i.test(f.name) && ['number', 'currency'].includes(f.type))?.name ||
+                    schema.find(f => /precio|valor|costo/i.test(f.name))?.name || null;
+      }
+    } catch (e){ /* sin esquema: deducir de los registros */ }
+    resultados[i].forEach(r => {
+      const f = r.fields;
+      const keys = Object.keys(f);
+      const nk = nombreKey && f[nombreKey] != null ? nombreKey :
+        (['Nombre del producto','Nombre','Producto','Servicio','Repuesto','Insumo','Descripción','Descripcion'].find(k => keys.includes(k)) || keys.find(k => typeof f[k] === 'string') || keys[0]);
+      const ck = codigoKey || keys.find(k => /c[oó]digo|referencia|^id$/i.test(k));
+      const pk = precioKey || keys.find(k => /precio|valor|costo/i.test(k) && typeof f[k] === 'number');
+      S.productos.push({
+        id: r.id,
+        codigo: String(ck && f[ck] != null ? f[ck] : '').trim(),
+        nombre: String((nk && f[nk]) || 'Sin nombre'),
+        unidad: f['Unidad de medida'] || 'Unidad',
+        precioBase: pk && typeof f[pk] === 'number' ? f[pk] : 0,
+        observaciones: '',
+        categoria: cat
       });
     });
-    return S.productos.length;
   }
+  S.productos.sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
+  return S.productos.length;
 }
 
 // Precios acordados de un cliente: {codigo: precio}. Intenta varias fórmulas de filtro.
@@ -1240,13 +1240,14 @@ function filterRemProductos(){
   const q = $('remProdBuscar').value.trim().toLowerCase();
   const box = $('remProdResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const matches = S.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)).slice(0, 6);
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
+  const matches = S.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)).slice(0, 8);
   box.innerHTML = matches.map(p => {
     const acordado = S.remPrecios[p.codigo];
     const precio = acordado ? acordado.precio : (p.precioBase || 0);
-    return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between" onclick="addRemProducto('${p.id}')">
-      <span>📦 ${esc(p.nombre)} <span style="color:var(--gris);font-size:12px">(${esc(p.codigo)})</span></span>
-      <strong style="color:var(--verde-oscuro)">${precio ? money(precio) : 'sin precio'}</strong>
+    return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addRemProducto('${p.id}')">
+      <span>${iconos[p.categoria] || '📦'} ${p.codigo ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px">${esc(p.codigo)}</span> ` : ''}${esc(p.nombre)}</span>
+      <strong style="color:var(--verde-oscuro);white-space:nowrap">${precio ? money(precio) : 'sin precio'}${acordado ? ' ⭐' : ''}</strong>
     </div>`;
   }).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
 }
