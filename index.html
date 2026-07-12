@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.6.0 - Formulario de productos con todas las columnas del esquema oficial (igual en las 3 categorias)
+     VERSION: 7.7.0 - Productos ordenados por numero de codigo con etiqueta visible
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1512,6 +1512,11 @@ async function loadNuestrosProductos(){
         S.npCampoNombre[cat] = primario.name;
         S.npSchema[cat] = schema.filter(f => f.name !== primario.name).slice(0, 8);
         S.npCamposExtra[cat] = S.npSchema[cat].map(f => f.name);
+        // Detectar la columna de código para ordenar
+        const todosNombres = schema.map(f => f.name);
+        S.npCampoCodigo = S.npCampoCodigo || {};
+        S.npCampoCodigo[cat] = todosNombres.find(k => /c[oó]digo/i.test(k)) ||
+                               todosNombres.find(k => /referencia|^id$/i.test(k)) || null;
       } else {
         // 2) Respaldo: deducir de los registros existentes
         const campos = {};
@@ -1525,6 +1530,9 @@ async function loadNuestrosProductos(){
           campos[k].every(v => typeof v === 'string' || typeof v === 'number')
         ).slice(0, 8);
         S.npSchema[cat] = S.npCamposExtra[cat].map(k => ({ name: k, type: 'singleLineText', choices: null }));
+        S.npCampoCodigo = S.npCampoCodigo || {};
+        S.npCampoCodigo[cat] = nombres.find(k => /c[oó]digo/i.test(k)) ||
+                               nombres.find(k => /referencia|^id$/i.test(k)) || null;
       }
     }
     renderNuestrosProductos();
@@ -1543,17 +1551,25 @@ function renderNuestrosProductos(){
   </div>`;
   Object.keys(NP_TABLAS).forEach(cat => {
     const nombreDe = r => String(r.fields[S.npCampoNombre[cat]] ?? 'Sin nombre');
+    const codigoDe = r => S.npCampoCodigo?.[cat] ? String(r.fields[S.npCampoCodigo[cat]] ?? '') : '';
     const items = S.npData[cat]
-      .filter(r => !filtro || nombreDe(r).toLowerCase().includes(filtro))
-      .sort((a, b) => nombreDe(a).localeCompare(nombreDe(b)));
+      .filter(r => !filtro || nombreDe(r).toLowerCase().includes(filtro) || codigoDe(r).toLowerCase().includes(filtro))
+      .sort((a, b) => {
+        const ca = codigoDe(a), cb = codigoDe(b);
+        if (ca && cb) return ca.localeCompare(cb, 'es', { numeric: true }); // orden por código (numérico)
+        if (ca) return -1;
+        if (cb) return 1;
+        return nombreDe(a).localeCompare(nombreDe(b));
+      });
     html += `<h3 style="margin:16px 0 8px;color:var(--verde-oscuro)">${NP_ICONOS[cat]} ${cat.charAt(0).toUpperCase() + cat.slice(1)} <span style="color:var(--gris);font-weight:400;font-size:14px">(${items.length})</span></h3>`;
     if (!items.length){ html += '<p style="color:var(--gris);font-size:13px;padding:4px 0 8px">Sin registros</p>'; return; }
     html += items.map(r => {
-      const extras = (S.npCamposExtra[cat] || []).map(k => r.fields[k] != null && r.fields[k] !== ''
+      const cod = codigoDe(r);
+      const extras = (S.npCamposExtra[cat] || []).filter(k => k !== S.npCampoCodigo?.[cat]).map(k => r.fields[k] != null && r.fields[k] !== ''
         ? `${esc(k)}: ${typeof r.fields[k] === 'number' && /precio|valor|costo/i.test(k) ? money(r.fields[k]) : esc(r.fields[k])}` : null
       ).filter(Boolean).join(' · ');
       return `<div style="background:#f9fafb;padding:10px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-left:3px solid var(--verde)">
-        <span><strong>${esc(nombreDe(r))}</strong>${extras ? '<br><span style="color:var(--gris);font-size:12px">' + extras + '</span>' : ''}</span>
+        <span>${cod ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px;margin-right:6px">${esc(cod)}</span>` : ''}<strong>${esc(nombreDe(r))}</strong>${extras ? '<br><span style="color:var(--gris);font-size:12px">' + extras + '</span>' : ''}</span>
         <button class="btn btn-sm btn-rojo" onclick="deleteNuestroProducto('${cat}','${r.id}')">🗑️</button>
       </div>`;
     }).join('');
