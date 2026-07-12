@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.5.0 - Productos: tablas Insumos, Repuestos y Servicios de la base principal; catalogo de remisiones alimentado de las 3 tablas
+     VERSION: 7.6.0 - Formulario de productos con todas las columnas del esquema oficial (igual en las 3 categorias)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -459,8 +459,8 @@ const ts = () => firebase.firestore.Timestamp.now();
 /* ============================================================
    5. API DE AIRTABLE (con reintento de nombres de tabla)
    ============================================================ */
-// Lista las tablas reales de la base (meta API) — se guarda en caché
-let _metaTablas = null;
+// Lista las tablas reales de la base (meta API) — se guarda en caché con su esquema completo
+let _metaTablas = null, _metaTablasFull = null;
 async function listAirtableTables(){
   if (_metaTablas) return _metaTablas;
   const res = await fetch(`https://api.airtable.com/v0/meta/bases/${CONFIG.airtable.baseId}/tables`, {
@@ -468,8 +468,23 @@ async function listAirtableTables(){
   });
   if (!res.ok) throw new Error(`No se pudo leer la lista de tablas (HTTP ${res.status})`);
   const data = await res.json();
-  _metaTablas = (data.tables || []).map(t => t.name);
+  _metaTablasFull = data.tables || [];
+  _metaTablas = _metaTablasFull.map(t => t.name);
   return _metaTablas;
+}
+// Devuelve las columnas editables de una tabla según su esquema oficial
+async function getTableSchema(nombreTabla){
+  await listAirtableTables();
+  const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
+  if (!t) return null;
+  const editables = ['singleLineText', 'multilineText', 'richText', 'number', 'currency', 'percent', 'email', 'phoneNumber', 'url', 'date', 'singleSelect'];
+  return t.fields
+    .filter(f => editables.includes(f.type))
+    .map(f => ({
+      name: f.name, type: f.type,
+      choices: f.type === 'singleSelect' ? (f.options?.choices || []).map(c => c.name) : null,
+      primary: f.id === t.primaryFieldId
+    }));
 }
 const normalizar = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
@@ -1486,18 +1501,31 @@ async function loadNuestrosProductos(){
   try {
     const [ins, rep, ser] = await Promise.all([npAll('insumos'), npAll('repuestos'), npAll('servicios')]);
     S.npData = { insumos: ins, repuestos: rep, servicios: ser };
-    // Detectar campo de nombre y campos extra por cada tabla
+    S.npSchema = {};
     for (const cat of Object.keys(NP_TABLAS)){
-      const campos = {};
-      S.npData[cat].forEach(r => Object.keys(r.fields).forEach(k => { campos[k] = campos[k] || []; campos[k].push(r.fields[k]); }));
-      const nombres = Object.keys(campos);
-      const preferidos = ['Nombre del producto', 'Nombre', 'Producto', 'Servicio', 'Repuesto', 'Insumo', 'Descripción', 'Descripcion'];
-      S.npCampoNombre[cat] = preferidos.find(p => nombres.includes(p)) ||
-        nombres.find(k => campos[k].some(v => typeof v === 'string')) || nombres[0] || 'Nombre';
-      S.npCamposExtra[cat] = nombres.filter(k =>
-        k !== S.npCampoNombre[cat] &&
-        campos[k].every(v => typeof v === 'string' || typeof v === 'number')
-      ).slice(0, 4);
+      // 1) Intentar con el esquema oficial de la tabla (incluye columnas vacías)
+      const nombreTabla = S.tablaResuelta[cat] || NP_TABLAS[cat];
+      let schema = null;
+      try { schema = await getTableSchema(nombreTabla); } catch (e){ console.warn('Sin esquema para', nombreTabla); }
+      if (schema && schema.length){
+        const primario = schema.find(f => f.primary) || schema[0];
+        S.npCampoNombre[cat] = primario.name;
+        S.npSchema[cat] = schema.filter(f => f.name !== primario.name).slice(0, 8);
+        S.npCamposExtra[cat] = S.npSchema[cat].map(f => f.name);
+      } else {
+        // 2) Respaldo: deducir de los registros existentes
+        const campos = {};
+        S.npData[cat].forEach(r => Object.keys(r.fields).forEach(k => { campos[k] = campos[k] || []; campos[k].push(r.fields[k]); }));
+        const nombres = Object.keys(campos);
+        const preferidos = ['Nombre del producto', 'Nombre', 'Producto', 'Servicio', 'Repuesto', 'Insumo', 'Descripción', 'Descripcion'];
+        S.npCampoNombre[cat] = preferidos.find(p => nombres.includes(p)) ||
+          nombres.find(k => campos[k].some(v => typeof v === 'string')) || nombres[0] || 'Nombre';
+        S.npCamposExtra[cat] = nombres.filter(k =>
+          k !== S.npCampoNombre[cat] &&
+          campos[k].every(v => typeof v === 'string' || typeof v === 'number')
+        ).slice(0, 8);
+        S.npSchema[cat] = S.npCamposExtra[cat].map(k => ({ name: k, type: 'singleLineText', choices: null }));
+      }
     }
     renderNuestrosProductos();
   } catch (e){
@@ -1553,8 +1581,15 @@ function openNewProductoModal(){
 
 function renderCamposNuevoProducto(){
   const cat = $('npCategoria').value;
-  const extras = (S.npCamposExtra[cat] || []).map((k, i) =>
-    `<div class="form-group"><label>${esc(k)}</label><input type="text" id="npx${i}" placeholder="Opcional"></div>`).join('');
+  const campos = S.npSchema?.[cat] || [];
+  const extras = campos.map((f, i) => {
+    if (f.type === 'singleSelect' && f.choices?.length){
+      return `<div class="form-group"><label>${esc(f.name)}</label>
+        <select id="npx${i}"><option value="">-- Seleccionar --</option>${f.choices.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+    }
+    const tipo = ['number', 'currency', 'percent'].includes(f.type) ? 'number' : (f.type === 'date' ? 'date' : 'text');
+    return `<div class="form-group"><label>${esc(f.name)}</label><input type="${tipo}" id="npx${i}" placeholder="Opcional"${tipo === 'number' ? ' step="any"' : ''}></div>`;
+  }).join('');
   $('npCamposDinamicos').innerHTML =
     `<div class="form-group"><label>${esc(S.npCampoNombre[cat] || 'Nombre')} *</label><input type="text" id="npNombre" placeholder="Ej: Tinta negra 500ml"></div>` + extras;
 }
@@ -1565,9 +1600,12 @@ async function saveNuestroProducto(){
   if (!nombre){ alert('⚠️ Escribe el nombre'); return; }
   const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
   const fields = { [S.npCampoNombre[cat] || 'Nombre']: nombre };
-  (S.npCamposExtra[cat] || []).forEach((k, i) => {
-    const v = $('npx' + i).value.trim();
-    if (v) fields[k] = /precio|valor|costo|cantidad/i.test(k) && !isNaN(Number(v.replace(/[.,$\s]/g, ''))) ? Number(v.replace(/[.,$\s]/g, '')) : v;
+  (S.npSchema?.[cat] || []).forEach((f, i) => {
+    const el = $('npx' + i);
+    if (!el) return;
+    const v = el.value.trim();
+    if (!v) return;
+    fields[f.name] = ['number', 'currency', 'percent'].includes(f.type) ? Number(v) : v;
   });
   try {
     const res = await npWrite(cat, '', 'POST', { fields });
