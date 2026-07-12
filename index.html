@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.10.0 - Opcion de remision exenta de IVA
+     VERSION: 7.11.0 - Precios estandar de todos los productos + precios acordados por cliente bloqueados
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -402,7 +402,7 @@ const S = {
   // Reportera
   reportEquipments: [], selectedEquipment: null, clientEquipments: [],
   // Remisiones admin
-  remCliente: null, remPrecios: {}, remProductos: [],
+  remCliente: null, remPrecios: null, remProductos: [],
   // Modal equipo
   equipModalCtx: null, equipEditId: null
 };
@@ -413,6 +413,20 @@ const S = {
 const $ = id => document.getElementById(id);
 const money = n => '$' + Math.round(n || 0).toLocaleString('es-CO');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Interpreta precios escritos de cualquier forma: 25000, "$25.000", "25.000,50", etc.
+const parsePrecio = v => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string'){
+    let s = v.replace(/[^\d.,]/g, '');
+    if (!s) return 0;
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else if (s.includes(',')) s = s.replace(',', '.');
+    else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  return 0;
+};
 
 function showScreen(id){
   document.querySelectorAll('[id^="scr-"]').forEach(el => el.classList.add('hidden'));
@@ -591,13 +605,18 @@ async function loadProductos(){
       const nk = nombreKey && f[nombreKey] != null ? nombreKey :
         (['Nombre del producto','Nombre','Producto','Servicio','Repuesto','Insumo','Descripción','Descripcion'].find(k => keys.includes(k)) || keys.find(k => typeof f[k] === 'string') || keys[0]);
       const ck = codigoKey || keys.find(k => /c[oó]digo|referencia|^id$/i.test(k));
-      const pk = precioKey || keys.find(k => /precio|valor|costo/i.test(k) && typeof f[k] === 'number');
+      // Precio: por nombre de columna, en número o texto ($25.000)
+      let precio = 0;
+      const pk = (precioKey && f[precioKey] != null ? precioKey : null) ||
+                 keys.find(k => /precio|valor|costo|tarifa|vr\b|\$/i.test(k) && parsePrecio(f[k]) > 0) ||
+                 keys.find(k => /precio|valor|costo|tarifa/i.test(k));
+      if (pk) precio = parsePrecio(f[pk]);
       S.productos.push({
         id: r.id,
         codigo: String(ck && f[ck] != null ? f[ck] : '').trim(),
         nombre: String((nk && f[nk]) || 'Sin nombre'),
         unidad: f['Unidad de medida'] || 'Unidad',
-        precioBase: pk && typeof f[pk] === 'number' ? f[pk] : 0,
+        precioBase: precio,
         observaciones: '',
         categoria: cat
       });
@@ -607,29 +626,56 @@ async function loadProductos(){
   return S.productos.length;
 }
 
-// Precios acordados de un cliente: {codigo: precio}. Intenta varias fórmulas de filtro.
+// Precios acordados de un cliente (tabla "Lista de precios" / "Precios por Cliente")
+// Devuelve {porCodigo: {codigo: {precio, nombre}}, porNombre: {nombre_normalizado: {precio, nombre}}}
 async function loadPreciosCliente(cliente){
   const formulas = [
     `{Cliente}="${cliente.airtableId}"`,
     `{Cliente}="${cliente.name.replace(/"/g, '\\"')}"`,
     `{Nombre del cliente}="${cliente.name.replace(/"/g, '\\"')}"`
   ];
+  let records = [];
   for (const f of formulas){
     try {
-      const records = await atAll('precios', `filterByFormula=${encodeURIComponent(f)}`);
-      if (records.length){
-        const precios = {};
-        records.forEach(r => {
-          const codigo = String(r.fields['Id'] || r.fields['Código del producto'] || '').trim();
-          const precio = parseFloat(r.fields['Precio acordado']);
-          const prodNombre = Array.isArray(r.fields['Producto']) ? r.fields['Producto'][0] : (r.fields['Producto'] || '');
-          if (codigo && !isNaN(precio) && precio > 0) precios[codigo] = { precio, nombre: prodNombre };
-        });
-        if (Object.keys(precios).length) return precios;
-      }
+      records = await atAll('precios', `filterByFormula=${encodeURIComponent(f)}`);
+      if (records.length) break;
     } catch (e){ console.warn('Fórmula de precios falló:', f, e.message); }
   }
-  return {};
+  // Respaldo: traer todo y filtrar aquí por el id o nombre del cliente en cualquier campo
+  if (!records.length){
+    try {
+      const todos = await atAll('precios');
+      records = todos.filter(r => Object.values(r.fields).some(v => {
+        const arr = Array.isArray(v) ? v : [v];
+        return arr.some(x => x === cliente.airtableId || (typeof x === 'string' && normalizar(x) === normalizar(cliente.name)));
+      }));
+    } catch (e){ console.warn('Carga completa de precios falló:', e.message); }
+  }
+  const porCodigo = {}, porNombre = {};
+  records.forEach(r => {
+    const f = r.fields;
+    const keys = Object.keys(f);
+    const precioKey = keys.find(k => /precio/i.test(k) && parsePrecio(f[k]) > 0) || keys.find(k => /precio|valor/i.test(k));
+    const precio = precioKey ? parsePrecio(f[precioKey]) : 0;
+    if (!precio) return;
+    const codigoKey = keys.find(k => /^id$|c[oó]digo|referencia/i.test(k));
+    const codigo = codigoKey ? String(f[codigoKey]).trim() : '';
+    const prodKey = keys.find(k => /producto|insumo|repuesto|servicio|art[ií]culo/i.test(k) && !/precio/i.test(k));
+    let prodNombre = prodKey ? f[prodKey] : '';
+    if (Array.isArray(prodNombre)) prodNombre = prodNombre[0] || '';
+    prodNombre = String(prodNombre);
+    const item = { precio, nombre: prodNombre || codigo };
+    if (codigo) porCodigo[codigo] = item;
+    if (prodNombre) porNombre[normalizar(prodNombre)] = item;
+  });
+  return { porCodigo, porNombre };
+}
+
+// Busca el precio acordado de un producto: primero por código, luego por nombre
+function precioAcordadoDe(p){
+  if (!S.remPrecios) return null;
+  return (p.codigo && S.remPrecios.porCodigo[p.codigo]) ||
+         S.remPrecios.porNombre[normalizar(p.nombre)] || null;
 }
 
 /* ============================================================
@@ -1232,14 +1278,11 @@ async function selectRemCliente(id){
   $('remProdHint').textContent = '(cargando precios del cliente...)';
   renderRemProductos();
   S.remPrecios = await loadPreciosCliente(S.remCliente);
-  const n = Object.keys(S.remPrecios).length;
-  if (n){
-    $('remProdBuscar').disabled = false;
-    $('remProdHint').textContent = `(${n} productos con precio acordado)`;
-  } else {
-    $('remProdBuscar').disabled = false;
-    $('remProdHint').textContent = '(sin precios acordados — se usará precio base o manual)';
-  }
+  const n = Math.max(Object.keys(S.remPrecios.porCodigo).length, Object.keys(S.remPrecios.porNombre).length);
+  $('remProdBuscar').disabled = false;
+  $('remProdHint').textContent = n
+    ? `(${n} producto${n === 1 ? '' : 's'} con precio acordado ⭐ para este cliente)`
+    : '(sin precios acordados — se usarán los precios estándar, editables)';
 }
 
 function filterRemProductos(){
@@ -1249,7 +1292,7 @@ function filterRemProductos(){
   const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
   const matches = S.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)).slice(0, 8);
   box.innerHTML = matches.map(p => {
-    const acordado = S.remPrecios[p.codigo];
+    const acordado = precioAcordadoDe(p);
     const precio = acordado ? acordado.precio : (p.precioBase || 0);
     return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addRemProducto('${p.id}')">
       <span>${iconos[p.categoria] || '📦'} ${p.codigo ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px">${esc(p.codigo)}</span> ` : ''}${esc(p.nombre)}</span>
@@ -1262,7 +1305,7 @@ function addRemProducto(prodId){
   const p = S.productos.find(x => x.id === prodId);
   if (!p) return;
   if (S.remProductos.find(x => x.id === prodId)){ alert('⚠️ Ese producto ya está en la remisión'); return; }
-  const acordado = p.codigo ? S.remPrecios[p.codigo] : null;
+  const acordado = precioAcordadoDe(p);
   S.remProductos.push({
     id: prodId, codigo: p.codigo, nombre: p.nombre, cantidad: 1,
     precioUnitario: acordado ? acordado.precio : (p.precioBase || 0),
@@ -1363,7 +1406,7 @@ async function createRemision(){
     flash('adminMsg', `✅ Remisión #${numero} creada`);
     await downloadRemisionExcel(docRef.id);
     // Limpiar
-    S.remCliente = null; S.remProductos = []; S.remPrecios = {};
+    S.remCliente = null; S.remProductos = []; S.remPrecios = null;
     $('remClienteSel').innerHTML = ''; $('remCreador').value = ''; $('remRespEntrega').value = '';
     $('remFactura').value = ''; $('remFormaPago').value = ''; $('remObservaciones').value = '';
     $('remExentaIva').checked = false;
@@ -1786,11 +1829,14 @@ async function loadClientPrecios(c){
   const box = $('cdPrecios');
   try {
     const precios = await loadPreciosCliente(c);
-    const entries = Object.entries(precios);
-    if (!entries.length){ box.innerHTML = '<p style="color:var(--gris);font-size:13px">Sin precios personalizados en Airtable</p>'; return; }
-    box.innerHTML = entries.map(([codigo, p]) => `
+    // Unir por código y por nombre sin duplicar
+    const vistos = new Set(); const items = [];
+    Object.entries(precios.porCodigo).forEach(([codigo, p]) => { items.push({ codigo, ...p }); vistos.add(p.nombre + '|' + p.precio); });
+    Object.values(precios.porNombre).forEach(p => { if (!vistos.has(p.nombre + '|' + p.precio)) items.push({ codigo: '', ...p }); });
+    if (!items.length){ box.innerHTML = '<p style="color:var(--gris);font-size:13px">Sin precios personalizados en Airtable</p>'; return; }
+    box.innerHTML = items.map(p => `
       <div style="display:flex;justify-content:space-between;background:#f9fafb;padding:9px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;border-left:3px solid var(--verde)">
-        <span>${esc(p.nombre || codigo)} <span style="color:var(--gris);font-size:12px">(${esc(codigo)})</span></span>
+        <span>⭐ ${esc(p.nombre)}${p.codigo ? ` <span style="color:var(--gris);font-size:12px">(${esc(p.codigo)})</span>` : ''}</span>
         <strong style="color:var(--verde-oscuro)">${money(p.precio)}</strong>
       </div>`).join('');
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
