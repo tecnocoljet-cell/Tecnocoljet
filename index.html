@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.9.0 - Precio editable en remisiones; precios acordados con el cliente bloqueados
+     VERSION: 7.10.0 - Opcion de remision exenta de IVA
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -300,6 +300,12 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
             <select id="remFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
           </div>
           <div class="form-group"><label>Observaciones</label><input type="text" id="remObservaciones" placeholder="Notas"></div>
+        </div>
+        <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px">
+          <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+            <input type="checkbox" id="remExentaIva" style="width:19px;height:19px;cursor:pointer" onchange="renderRemProductos()">
+            <span>🚫 Remisión <strong>EXENTA de IVA</strong> (no se cobrará el 19%)</span>
+          </label>
         </div>
         <button class="btn btn-block" id="btnCrearRemision" onclick="createRemision()">📦 Crear Remisión (genera Excel)</button>
       </div>
@@ -1282,8 +1288,9 @@ function removeRemProducto(i){ S.remProductos.splice(i, 1); renderRemProductos()
 function remTotales(){
   const totalProductos = S.remProductos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
   const subtotal = totalProductos;
-  const iva = Math.round(subtotal * CONFIG.iva);
-  return { totalProductos, subtotal, iva, precioTotal: subtotal + iva };
+  const exenta = $('remExentaIva')?.checked || false;
+  const iva = exenta ? 0 : Math.round(subtotal * CONFIG.iva);
+  return { totalProductos, subtotal, iva, precioTotal: subtotal + iva, exentaIva: exenta };
 }
 
 function renderRemProductos(){
@@ -1302,7 +1309,7 @@ function renderRemProductos(){
       <td><button class="btn btn-sm btn-rojo" onclick="removeRemProducto(${i})">✕</button></td>
     </tr>`).join('')}
     <tr><td colspan="3" style="text-align:right"><strong>SUBTOTAL</strong></td><td colspan="2"><strong>${money(t.subtotal)}</strong></td></tr>
-    <tr><td colspan="3" style="text-align:right">IVA 19%</td><td colspan="2">${money(t.iva)}</td></tr>
+    <tr><td colspan="3" style="text-align:right">${t.exentaIva ? 'IVA <span style="color:var(--amarillo);font-weight:700">(EXENTA)</span>' : 'IVA 19%'}</td><td colspan="2">${money(t.iva)}</td></tr>
     <tr><td colspan="3" style="text-align:right"><strong>TOTAL FACTURADO</strong></td><td colspan="2"><strong style="color:var(--verde-oscuro)">${money(t.precioTotal)}</strong></td></tr>
   </table>
   <p style="font-size:12px;color:var(--gris);margin-top:-4px">⭐🔒 = precio acordado con el cliente (fijo) · Los demás precios se pueden editar</p>`;
@@ -1327,6 +1334,7 @@ async function createRemision(){
     observaciones: $('remObservaciones').value || '',
     productos: S.remProductos,
     totalProductos: t.totalProductos, subtotal: t.subtotal, iva: t.iva, precioTotal: t.precioTotal,
+    exentaIva: t.exentaIva,
     estado: 'Pendiente', status: 'pending', createdAt: ts(), fechaCreacion
   };
   try {
@@ -1358,6 +1366,7 @@ async function createRemision(){
     S.remCliente = null; S.remProductos = []; S.remPrecios = {};
     $('remClienteSel').innerHTML = ''; $('remCreador').value = ''; $('remRespEntrega').value = '';
     $('remFactura').value = ''; $('remFormaPago').value = ''; $('remObservaciones').value = '';
+    $('remExentaIva').checked = false;
     $('remProdBuscar').disabled = true; $('remProdHint').textContent = '(selecciona primero un cliente)';
     renderRemProductos();
     loadNextRemisionNumber(); loadCreatedRemisiones();
@@ -1405,7 +1414,7 @@ async function viewRemisionDetails(id){
     <table class="mini" style="margin:12px 0"><tr><th>Producto</th><th>Cant.</th><th>V/Unit</th><th>V/Total</th></tr>
     ${(r.productos || []).map(p => `<tr><td>${esc(p.nombre)}</td><td>${p.cantidad}</td><td>${money(p.precioUnitario)}</td><td>${money(p.cantidad * p.precioUnitario)}</td></tr>`).join('')}
     </table>
-    <p style="text-align:right"><strong>TOTAL FACTURADO: ${money(r.precioTotal)}</strong></p>
+    <p style="text-align:right"><strong>TOTAL FACTURADO: ${money(r.precioTotal)}</strong>${r.exentaIva ? ' <span class="badge badge-pend">🚫 EXENTA DE IVA</span>' : ''}</p>
     ${r.motivoNoEntrega ? `<p style="color:var(--rojo)"><strong>Motivo no entrega:</strong> ${esc(r.motivoNoEntrega)}</p>` : ''}
     ${r.fotoEntrega ? `<p><strong>Foto de entrega:</strong></p><img src="${r.fotoEntrega}" style="max-width:100%;border-radius:10px">` : ''}
     <div style="display:flex;gap:10px;margin-top:14px">
@@ -1459,7 +1468,9 @@ async function downloadRemisionExcel(remisionId){
     productos.forEach(p => data.push([p.codigo, 1, p.nombre, '', p.cantidad, '', '', p.precioUnitario, p.cantidad * p.precioUnitario]));
     for (let i = productos.length; i < 10; i++) data.push([]);
     const totalProductos = productos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
-    const subtotal = totalProductos, iva = Math.round(subtotal * CONFIG.iva), totalConIva = subtotal + iva;
+    const subtotal = typeof r.subtotal === 'number' ? r.subtotal : totalProductos;
+    const iva = typeof r.iva === 'number' ? r.iva : (r.exentaIva ? 0 : Math.round(subtotal * CONFIG.iva));
+    const totalConIva = typeof r.precioTotal === 'number' ? r.precioTotal : subtotal + iva;
     data.push(['', '', '', '', 'TOTAL PRODUCTOS', '', '', '', totalProductos]);
     data.push(['', '', '', '', 'DESCUENTOS', '', '', '', 0]);
     data.push(['', '', '', '', 'DESCUENTOS PROMO', '', '', '', 0]);
