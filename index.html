@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.2.1 - Modulo de productos restaurado tras la limpieza del Excel
+     VERSION: 8.3.0 - Sincronizacion inteligente con la tabla Remisiones de Airtable + PDF con direcciones largas envueltas
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -518,6 +518,12 @@ async function getTableAllFieldNames(nombreTabla){
   const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
   return t ? t.fields.map(f => f.name) : null;
 }
+// Devuelve las columnas completas (nombre + tipo) de una tabla
+async function getTableFields(nombreTabla){
+  await listAirtableTables();
+  const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
+  return t ? t.fields.map(f => ({ name: f.name, type: f.type })) : null;
+}
 // Filtra un objeto de campos dejando solo las columnas que existen en la tabla
 async function soloColumnasExistentes(tablaKey, fields){
   try {
@@ -866,7 +872,7 @@ async function updateRemisionAirtable(airtableId, fields){
   try {
     const filtrados = await soloColumnasExistentes('remisiones', fields);
     if (Object.keys(filtrados).length)
-      await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields: filtrados }) });
+      await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields: filtrados, typecast: true }) });
   } catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
 }
 
@@ -1436,20 +1442,26 @@ async function createRemision(){
     // Sincronizar a Airtable
     try {
       const productosTexto = S.remProductos.map(p => `${p.cantidad} ${p.nombre}`).join(', ');
-      const camposRemision = await soloColumnasExistentes('remisiones', {
-        'Código de remisión': parseInt(numero),
-        'Cliente': [S.remCliente.airtableId],
-        'Responsable de la remisión': creador,
-        'Responsable de entrega': $('remRespEntrega').value || '',
-        'Productos remisionados': productosTexto,
-        'Precio de venta': Math.round(t.precioTotal),
-        'Estado': 'Pendiente',
-        'Fecha de creación': fechaCreacion,
-        'Factura electrónica': $('remFactura').value || '',
-        'Forma de pago': $('remFormaPago').value || '',
-        'Observaciones': $('remObservaciones').value || ''
-      });
-      const at = await atFetch('remisiones', '', { method: 'POST', body: JSON.stringify({ fields: camposRemision }) });
+      // Emparejar cada dato con la columna real de tu tabla Remisiones (por nombre parecido y tipo)
+      const camposTabla = await getTableFields(S.tablaResuelta['remisiones'] || 'Remisiones') || [];
+      const buscarCol = (regex) => camposTabla.find(f => regex.test(normalizar(f.name)));
+      const camposRemision = {};
+      const poner = (col, valor) => { if (col && valor !== undefined && valor !== '') camposRemision[col.name] = valor; };
+      let col;
+      col = buscarCol(/codigo/); poner(col, col && /text/i.test(col.type) ? String(numero) : parseInt(numero));
+      col = buscarCol(/^cliente$|cliente/);
+      if (col) poner(col, col.type === 'multipleRecordLinks' ? [S.remCliente.airtableId] : S.remCliente.name);
+      poner(buscarCol(/responsable.*(remision|creacion)|elaborad|creador|quien crea/), creador);
+      poner(buscarCol(/responsable.*entrega|entrega(dor)?$/), $('remRespEntrega').value || '');
+      poner(buscarCol(/productos/), productosTexto);
+      poner(buscarCol(/precio|valor.*venta|total/), Math.round(t.precioTotal));
+      poner(buscarCol(/estado/), 'Pendiente');
+      col = buscarCol(/fecha.*(creacion|remision)|^fecha$/); poner(col, col && col.type === 'date' ? fechaCreacion.split('T')[0] : fechaCreacion);
+      poner(buscarCol(/factura/), $('remFactura').value || '');
+      poner(buscarCol(/forma.*pago|pago/), $('remFormaPago').value || '');
+      poner(buscarCol(/observa/), $('remObservaciones').value || '');
+      console.log('Campos a enviar a Airtable:', camposRemision);
+      const at = await atFetch('remisiones', '', { method: 'POST', body: JSON.stringify({ fields: camposRemision, typecast: true }) });
       await docRef.update({ airtableId: at.id });
     } catch (e){
       console.error('Airtable falló:', e);
@@ -1560,28 +1572,43 @@ async function generateRemisionPDF(remisionId){
     pdf.text('N° ' + String(r.numero), W - 38, 21, { align: 'center' });
     pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.2); pdf.line(10, 31, W - 10, 31);
 
-    // ===== Datos del cliente y fecha =====
+    // ===== Datos del cliente y fecha (dos columnas con texto envuelto) =====
     let y = 41;
     pdf.setTextColor(40); pdf.setFontSize(9);
     const fecha = r.createdAt ? r.createdAt.toDate() : new Date();
     const fechaTxt = fecha.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
-    pdf.setFillColor(240, 249, 240); pdf.roundedRect(10, y - 5, W - 20, 32, 2, 2, 'F');
+    // Preparar contenido de cada columna con ancho limitado
+    const colIzq = [
+      ['Razón social:', c.razonSocial || r.clientName],
+      ['NIT:', c.documento],
+      ['Dirección:', c.direccion],
+      ['Ciudad:', c.ciudad]
+    ];
+    const colDer = [
+      ['F. Remisión:', fechaTxt],
+      ['Teléfono:', c.telefono]
+    ];
+    if (r.formaPago) colDer.push(['F. de pago:', r.formaPago]);
+    if (r.facturaElectronica) colDer.push(['Factura:', r.facturaElectronica]);
+    const ANCHO_IZQ = 62, ANCHO_DER = 52; // ancho máximo del texto de cada columna
+    const prep = (col, ancho) => col.map(([lab, val]) => ({ lab, lineas: pdf.splitTextToSize(String(val || '—'), ancho) }));
+    const izq = prep(colIzq, ANCHO_IZQ), der = prep(colDer, ANCHO_DER);
+    const alturaDe = col => col.reduce((s, it) => s + it.lineas.length * 4.6, 0);
+    const altoCaja = Math.max(alturaDe(izq), alturaDe(der)) + 13;
+    pdf.setFillColor(240, 249, 240); pdf.roundedRect(10, y - 5, W - 20, altoCaja, 2, 2, 'F');
     pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...VERDE_OSC);
     pdf.text('DATOS DEL CLIENTE', 14, y);
     pdf.setTextColor(40);
-    const linea = (label, valor, x, yy) => {
-      pdf.setFont('helvetica', 'bold'); pdf.text(label, x, yy);
-      pdf.setFont('helvetica', 'normal'); pdf.text(String(valor || '—'), x + 26, yy);
+    const pintarCol = (col, xLab, xVal, yy) => {
+      col.forEach(it => {
+        pdf.setFont('helvetica', 'bold'); pdf.text(it.lab, xLab, yy);
+        pdf.setFont('helvetica', 'normal'); pdf.text(it.lineas, xVal, yy);
+        yy += it.lineas.length * 4.6;
+      });
     };
-    linea('Razón social:', c.razonSocial || r.clientName, 14, y + 6);
-    linea('NIT:', c.documento, 14, y + 12);
-    linea('Dirección:', c.direccion, 14, y + 18);
-    linea('Ciudad:', c.ciudad, 14, y + 24);
-    linea('Teléfono:', c.telefono, 115, y + 12);
-    linea('F. Remisión:', fechaTxt, 115, y + 6);
-    if (r.formaPago) linea('F. de pago:', r.formaPago, 115, y + 18);
-    if (r.facturaElectronica) linea('Factura:', r.facturaElectronica, 115, y + 24);
-    y += 34;
+    pintarCol(izq, 14, 40, y + 6);
+    pintarCol(der, 118, 141, y + 6);
+    y += altoCaja + 3;
 
     // ===== Tabla de productos (dibujada directamente) =====
     const cols = [
