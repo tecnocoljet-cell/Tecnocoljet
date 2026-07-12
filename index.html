@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.2.0 - Excel eliminado, PDF sin librerias externas, Airtable solo envia columnas existentes, favicon
+     VERSION: 8.2.1 - Modulo de productos restaurado tras la limpieza del Excel
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1675,6 +1675,163 @@ async function generateRemisionPDF(remisionId){
     pdf.save(filename);
     return filename;
   } catch (e){ alert('❌ Error generando PDF: ' + e.message); }
+}
+
+/* ============================================================
+   14. ADMIN — NUESTROS PRODUCTOS (Insumos / Repuestos / Servicios)
+   ============================================================ */
+const NP_TABLAS = { insumos: 'Insumos', repuestos: 'Repuestos', servicios: 'Servicios' };
+const NP_ICONOS = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
+S.npData = { insumos: [], repuestos: [], servicios: [] };
+S.npCampoNombre = {}; S.npCamposExtra = {}; S.npCampoCodigo = {}; S.npSchema = {};
+
+async function npAll(categoria){ return await atAll(categoria); }
+async function npWrite(categoria, path, method, body){
+  return await atFetch(categoria, path, { method, body: body ? JSON.stringify(body) : undefined });
+}
+
+async function loadNuestrosProductos(){
+  const box = $('nuestrosProductosList');
+  box.innerHTML = '<div class="loading">Cargando productos de Airtable...</div>';
+  try {
+    const [ins, rep, ser] = await Promise.all([npAll('insumos'), npAll('repuestos'), npAll('servicios')]);
+    S.npData = { insumos: ins, repuestos: rep, servicios: ser };
+    for (const cat of Object.keys(NP_TABLAS)){
+      const nombreTabla = S.tablaResuelta[cat] || NP_TABLAS[cat];
+      let schema = null;
+      try { schema = await getTableSchema(nombreTabla); } catch (e){ console.warn('Sin esquema para', nombreTabla); }
+      if (schema && schema.length){
+        const primario = schema.find(f => f.primary) || schema[0];
+        S.npCampoNombre[cat] = primario.name;
+        S.npSchema[cat] = schema.filter(f => f.name !== primario.name).slice(0, 8);
+        S.npCamposExtra[cat] = S.npSchema[cat].map(f => f.name);
+        const todosNombres = schema.map(f => f.name);
+        S.npCampoCodigo[cat] = todosNombres.find(k => /c[oó]digo/i.test(k)) ||
+                               todosNombres.find(k => /referencia|^id$/i.test(k)) || null;
+      } else {
+        const campos = {};
+        S.npData[cat].forEach(r => Object.keys(r.fields).forEach(k => { campos[k] = campos[k] || []; campos[k].push(r.fields[k]); }));
+        const nombres = Object.keys(campos);
+        const preferidos = ['Nombre del producto', 'Nombre', 'Producto', 'Servicio', 'Repuesto', 'Insumo', 'Descripción', 'Descripcion'];
+        S.npCampoNombre[cat] = preferidos.find(p => nombres.includes(p)) ||
+          nombres.find(k => campos[k].some(v => typeof v === 'string')) || nombres[0] || 'Nombre';
+        S.npCamposExtra[cat] = nombres.filter(k =>
+          k !== S.npCampoNombre[cat] &&
+          campos[k].every(v => typeof v === 'string' || typeof v === 'number')
+        ).slice(0, 8);
+        S.npSchema[cat] = S.npCamposExtra[cat].map(k => ({ name: k, type: 'singleLineText', choices: null }));
+        S.npCampoCodigo[cat] = nombres.find(k => /c[oó]digo/i.test(k)) ||
+                               nombres.find(k => /referencia|^id$/i.test(k)) || null;
+      }
+    }
+    renderNuestrosProductos();
+  } catch (e){
+    box.innerHTML = `<p class="msg msg-error">${esc(e.message)}</p>
+      <button class="btn btn-sm" onclick="loadNuestrosProductos()">🔄 Reintentar</button>`;
+  }
+}
+
+function renderNuestrosProductos(){
+  const box = $('nuestrosProductosList');
+  const filtro = ($('npBuscar').value || '').trim().toLowerCase();
+  const total = S.npData.insumos.length + S.npData.repuestos.length + S.npData.servicios.length;
+  let html = `<div style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:9px;padding:9px 14px;font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">
+    🛒 ${total} producto${total === 1 ? '' : 's'} en total · 🧪 ${S.npData.insumos.length} insumos · 🔩 ${S.npData.repuestos.length} repuestos · 🛠️ ${S.npData.servicios.length} servicios
+  </div>`;
+  Object.keys(NP_TABLAS).forEach(cat => {
+    const nombreDe = r => String(r.fields[S.npCampoNombre[cat]] ?? 'Sin nombre');
+    const codigoDe = r => S.npCampoCodigo?.[cat] ? String(r.fields[S.npCampoCodigo[cat]] ?? '') : '';
+    const items = S.npData[cat]
+      .filter(r => !filtro || nombreDe(r).toLowerCase().includes(filtro) || codigoDe(r).toLowerCase().includes(filtro))
+      .sort((a, b) => {
+        const ca = codigoDe(a), cb = codigoDe(b);
+        if (ca && cb) return ca.localeCompare(cb, 'es', { numeric: true });
+        if (ca) return -1;
+        if (cb) return 1;
+        return nombreDe(a).localeCompare(nombreDe(b));
+      });
+    html += `<h3 style="margin:16px 0 8px;color:var(--verde-oscuro)">${NP_ICONOS[cat]} ${cat.charAt(0).toUpperCase() + cat.slice(1)} <span style="color:var(--gris);font-weight:400;font-size:14px">(${items.length})</span></h3>`;
+    if (!items.length){ html += '<p style="color:var(--gris);font-size:13px;padding:4px 0 8px">Sin registros</p>'; return; }
+    html += items.map(r => {
+      const cod = codigoDe(r);
+      const extras = (S.npCamposExtra[cat] || []).filter(k => k !== S.npCampoCodigo?.[cat]).map(k => r.fields[k] != null && r.fields[k] !== ''
+        ? `${esc(k)}: ${typeof r.fields[k] === 'number' && /precio|valor|costo/i.test(k) ? money(r.fields[k]) : esc(r.fields[k])}` : null
+      ).filter(Boolean).join(' · ');
+      return `<div style="background:#f9fafb;padding:10px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-left:3px solid var(--verde)">
+        <span>${cod ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px;margin-right:6px">${esc(cod)}</span>` : ''}<strong>${esc(nombreDe(r))}</strong>${extras ? '<br><span style="color:var(--gris);font-size:12px">' + extras + '</span>' : ''}</span>
+        <button class="btn btn-sm btn-rojo" onclick="deleteNuestroProducto('${cat}','${r.id}')">🗑️</button>
+      </div>`;
+    }).join('');
+  });
+  box.innerHTML = html;
+}
+
+function openNewProductoModal(){
+  openOverlay(`
+    <h2 style="margin-bottom:14px">➕ Nuevo Producto</h2>
+    <div class="form-group"><label>Categoría *</label>
+      <select id="npCategoria" onchange="renderCamposNuevoProducto()">
+        <option value="insumos">🧪 Insumo</option>
+        <option value="repuestos">🔩 Repuesto</option>
+        <option value="servicios">🛠️ Servicio</option>
+      </select>
+    </div>
+    <div id="npCamposDinamicos"></div>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button class="btn" style="flex:1" id="npSaveBtn" onclick="saveNuestroProducto()">💾 Crear Producto</button>
+      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
+    </div>`);
+  renderCamposNuevoProducto();
+}
+
+function renderCamposNuevoProducto(){
+  const cat = $('npCategoria').value;
+  const campos = S.npSchema?.[cat] || [];
+  const extras = campos.map((f, i) => {
+    if (f.type === 'singleSelect' && f.choices?.length){
+      return `<div class="form-group"><label>${esc(f.name)}</label>
+        <select id="npx${i}"><option value="">-- Seleccionar --</option>${f.choices.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+    }
+    const tipo = ['number', 'currency', 'percent'].includes(f.type) ? 'number' : (f.type === 'date' ? 'date' : 'text');
+    return `<div class="form-group"><label>${esc(f.name)}</label><input type="${tipo}" id="npx${i}" placeholder="Opcional"${tipo === 'number' ? ' step="any"' : ''}></div>`;
+  }).join('');
+  $('npCamposDinamicos').innerHTML =
+    `<div class="form-group"><label>${esc(S.npCampoNombre[cat] || 'Nombre')} *</label><input type="text" id="npNombre" placeholder="Ej: Tinta negra 500ml"></div>` + extras;
+}
+
+async function saveNuestroProducto(){
+  const cat = $('npCategoria').value;
+  const nombre = $('npNombre').value.trim();
+  if (!nombre){ alert('⚠️ Escribe el nombre'); return; }
+  const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const fields = { [S.npCampoNombre[cat] || 'Nombre']: nombre };
+  (S.npSchema?.[cat] || []).forEach((f, i) => {
+    const el = $('npx' + i);
+    if (!el) return;
+    const v = el.value.trim();
+    if (!v) return;
+    fields[f.name] = ['number', 'currency', 'percent'].includes(f.type) ? Number(v) : v;
+  });
+  try {
+    const res = await npWrite(cat, '', 'POST', { fields });
+    S.npData[cat].push(res);
+    closeOverlay();
+    flash('adminMsg', `✅ "${esc(nombre)}" creado en ${NP_TABLAS[cat]}`);
+    renderNuestrosProductos();
+  } catch (e){ alert('❌ No se pudo crear en Airtable: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '💾 Crear Producto'; }
+}
+
+async function deleteNuestroProducto(cat, recordId){
+  const r = S.npData[cat].find(x => x.id === recordId);
+  const nombre = r ? String(r.fields[S.npCampoNombre[cat]] || 'este producto') : 'este producto';
+  if (!confirm(`⚠️ ¿Eliminar "${nombre}" de ${NP_TABLAS[cat]}?\n\nEsta acción no se puede deshacer.`)) return;
+  try {
+    await npWrite(cat, `/${recordId}`, 'DELETE');
+    S.npData[cat] = S.npData[cat].filter(x => x.id !== recordId);
+    flash('adminMsg', `🗑️ "${esc(nombre)}" eliminado`);
+    renderNuestrosProductos();
+  } catch (e){ alert('❌ No se pudo eliminar: ' + e.message); }
 }
 
 /* ============================================================
