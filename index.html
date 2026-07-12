@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 7.8.0 - Buscador de remisiones usa los productos de la pestana Productos (Insumos, Repuestos, Servicios)
+     VERSION: 7.9.0 - Precio editable en remisiones; precios acordados con el cliente bloqueados
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1255,15 +1255,13 @@ function filterRemProductos(){
 function addRemProducto(prodId){
   const p = S.productos.find(x => x.id === prodId);
   if (!p) return;
-  if (S.remProductos.find(x => x.codigo === p.codigo)){ alert('⚠️ Ese producto ya está en la remisión'); return; }
-  const acordado = S.remPrecios[p.codigo];
-  let precio = acordado ? acordado.precio : (p.precioBase || 0);
-  if (!precio){
-    const manual = prompt(`Este producto no tiene precio para este cliente.\nEscribe el precio unitario de "${p.nombre}":`);
-    precio = parseFloat(manual);
-    if (isNaN(precio) || precio <= 0) return;
-  }
-  S.remProductos.push({ codigo: p.codigo, nombre: p.nombre, cantidad: 1, precioUnitario: precio });
+  if (S.remProductos.find(x => x.id === prodId)){ alert('⚠️ Ese producto ya está en la remisión'); return; }
+  const acordado = p.codigo ? S.remPrecios[p.codigo] : null;
+  S.remProductos.push({
+    id: prodId, codigo: p.codigo, nombre: p.nombre, cantidad: 1,
+    precioUnitario: acordado ? acordado.precio : (p.precioBase || 0),
+    precioAcordado: !!acordado   // ⭐ los precios acordados con el cliente no se pueden modificar
+  });
   $('remProdBuscar').value = ''; $('remProdResultados').innerHTML = '';
   renderRemProductos();
 }
@@ -1271,6 +1269,12 @@ function addRemProducto(prodId){
 function setRemCantidad(i, val){
   const n = parseInt(val);
   if (!isNaN(n) && n > 0) S.remProductos[i].cantidad = n;
+  renderRemProductos();
+}
+function setRemPrecio(i, val){
+  if (S.remProductos[i].precioAcordado) return; // bloqueado
+  const n = parseFloat(String(val).replace(/[.,$\s]/g, m => m === ',' ? '.' : ''));
+  if (!isNaN(n) && n >= 0) S.remProductos[i].precioUnitario = n;
   renderRemProductos();
 }
 function removeRemProducto(i){ S.remProductos.splice(i, 1); renderRemProductos(); }
@@ -1291,13 +1295,17 @@ function renderRemProductos(){
     ${S.remProductos.map((p, i) => `<tr>
       <td>${esc(p.nombre)}</td>
       <td><input type="number" min="1" value="${p.cantidad}" style="width:58px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setRemCantidad(${i},this.value)"></td>
-      <td>${money(p.precioUnitario)}</td><td>${money(p.cantidad * p.precioUnitario)}</td>
+      <td>${p.precioAcordado
+        ? `<span title="Precio acordado con el cliente — no modificable">⭐ ${money(p.precioUnitario)} 🔒</span>`
+        : `<input type="number" min="0" step="any" value="${p.precioUnitario}" style="width:98px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setRemPrecio(${i},this.value)" title="Puedes ajustar este precio">`}</td>
+      <td>${money(p.cantidad * p.precioUnitario)}</td>
       <td><button class="btn btn-sm btn-rojo" onclick="removeRemProducto(${i})">✕</button></td>
     </tr>`).join('')}
     <tr><td colspan="3" style="text-align:right"><strong>SUBTOTAL</strong></td><td colspan="2"><strong>${money(t.subtotal)}</strong></td></tr>
     <tr><td colspan="3" style="text-align:right">IVA 19%</td><td colspan="2">${money(t.iva)}</td></tr>
     <tr><td colspan="3" style="text-align:right"><strong>TOTAL FACTURADO</strong></td><td colspan="2"><strong style="color:var(--verde-oscuro)">${money(t.precioTotal)}</strong></td></tr>
-  </table>`;
+  </table>
+  <p style="font-size:12px;color:var(--gris);margin-top:-4px">⭐🔒 = precio acordado con el cliente (fijo) · Los demás precios se pueden editar</p>`;
 }
 
 async function createRemision(){
@@ -1306,6 +1314,8 @@ async function createRemision(){
   if (!creador){ alert('⚠️ Escribe quién crea la remisión'); return; }
   if (!S.remCliente){ alert('⚠️ Selecciona un cliente'); return; }
   if (!S.remProductos.length){ alert('⚠️ Agrega al menos un producto'); return; }
+  const sinPrecio = S.remProductos.filter(p => !p.precioUnitario || p.precioUnitario <= 0);
+  if (sinPrecio.length){ alert('⚠️ Estos productos tienen precio en $0 — escribe su precio en la columna V/Unit:\n\n' + sinPrecio.map(p => '• ' + p.nombre).join('\n')); return; }
 
   const btn = $('btnCrearRemision'); btn.disabled = true; btn.textContent = '⏳ Creando...';
   const t = remTotales();
