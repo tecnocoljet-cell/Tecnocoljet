@@ -2,17 +2,17 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.1.0 - Logo TECNOCOL integrado en pagina, PDF de remisiones y PDF de reportes
+     VERSION: 8.2.0 - Excel eliminado, PDF sin librerias externas, Airtable solo envia columnas existentes, favicon
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TECNOCOLJET - Sistema Operativo Empresarial</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
 
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
@@ -512,6 +512,30 @@ async function getTableSchema(nombreTabla){
 }
 const normalizar = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
+// Devuelve TODOS los nombres de columnas de una tabla (para no enviar campos inexistentes)
+async function getTableAllFieldNames(nombreTabla){
+  await listAirtableTables();
+  const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
+  return t ? t.fields.map(f => f.name) : null;
+}
+// Filtra un objeto de campos dejando solo las columnas que existen en la tabla
+async function soloColumnasExistentes(tablaKey, fields){
+  try {
+    const nombre = S.tablaResuelta[tablaKey] || CONFIG.airtable.tablas[tablaKey][0];
+    const reales = await getTableAllFieldNames(nombre);
+    if (!reales) return fields;
+    const set = new Set(reales.map(normalizar));
+    const filtrado = {};
+    Object.keys(fields).forEach(k => {
+      if (set.has(normalizar(k))){
+        const real = reales.find(rn => normalizar(rn) === normalizar(k));
+        filtrado[real] = fields[k];
+      } else console.warn('Columna omitida (no existe en Airtable):', k);
+    });
+    return filtrado;
+  } catch (e){ return fields; }
+}
+
 async function atFetch(tablaKey, params = '', options = {}){
   let nombres = S.tablaResuelta[tablaKey]
     ? [S.tablaResuelta[tablaKey]]
@@ -839,8 +863,11 @@ function validateMotivo(){ $('saveNoDeliveryBtn').disabled = $('noEntregaMotivo'
 
 async function updateRemisionAirtable(airtableId, fields){
   if (!airtableId) return;
-  try { await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields }) }); }
-  catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
+  try {
+    const filtrados = await soloColumnasExistentes('remisiones', fields);
+    if (Object.keys(filtrados).length)
+      await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields: filtrados }) });
+  } catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
 }
 
 async function saveDelivery(){
@@ -1409,7 +1436,7 @@ async function createRemision(){
     // Sincronizar a Airtable
     try {
       const productosTexto = S.remProductos.map(p => `${p.cantidad} ${p.nombre}`).join(', ');
-      const at = await atFetch('remisiones', '', { method: 'POST', body: JSON.stringify({ fields: {
+      const camposRemision = await soloColumnasExistentes('remisiones', {
         'Código de remisión': parseInt(numero),
         'Cliente': [S.remCliente.airtableId],
         'Responsable de la remisión': creador,
@@ -1421,7 +1448,8 @@ async function createRemision(){
         'Factura electrónica': $('remFactura').value || '',
         'Forma de pago': $('remFormaPago').value || '',
         'Observaciones': $('remObservaciones').value || ''
-      }})});
+      });
+      const at = await atFetch('remisiones', '', { method: 'POST', body: JSON.stringify({ fields: camposRemision }) });
       await docRef.update({ airtableId: at.id });
     } catch (e){
       console.error('Airtable falló:', e);
@@ -1485,8 +1513,7 @@ async function viewRemisionDetails(id){
     ${r.motivoNoEntrega ? `<p style="color:var(--rojo)"><strong>Motivo no entrega:</strong> ${esc(r.motivoNoEntrega)}</p>` : ''}
     ${r.fotoEntrega ? `<p><strong>Foto de entrega:</strong></p><img src="${r.fotoEntrega}" style="max-width:100%;border-radius:10px">` : ''}
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn" style="flex:1" onclick="generateRemisionPDF('${id}')">📄 PDF</button>
-      <button class="btn btn-azul" style="flex:1" onclick="downloadRemisionExcel('${id}')">📥 Excel</button>
+      <button class="btn" style="flex:1" onclick="generateRemisionPDF('${id}')">📄 Descargar PDF</button>
       <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cerrar</button>
     </div>`);
 }
@@ -1556,50 +1583,70 @@ async function generateRemisionPDF(remisionId){
     if (r.facturaElectronica) linea('Factura:', r.facturaElectronica, 115, y + 24);
     y += 34;
 
-    // ===== Tabla de productos =====
-    pdf.autoTable({
-      startY: y,
-      head: [['CÓDIGO', 'BODEGA', 'DESCRIPCIÓN', 'CANT.', 'V/ UNIT', 'V/ TOTAL']],
-      body: productos.map(p => [
-        p.codigo || '—', '1', p.nombre, String(p.cantidad),
-        money(p.precioUnitario), money(p.cantidad * p.precioUnitario)
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: VERDE, textColor: 255, fontStyle: 'bold', fontSize: 9 },
-      bodyStyles: { fontSize: 9, textColor: 40 },
-      columnStyles: {
-        0: { cellWidth: 22 }, 1: { cellWidth: 18, halign: 'center' }, 2: { cellWidth: 'auto' },
-        3: { cellWidth: 16, halign: 'center' }, 4: { cellWidth: 26, halign: 'right' }, 5: { cellWidth: 28, halign: 'right' }
-      },
-      margin: { left: 10, right: 10 }
+    // ===== Tabla de productos (dibujada directamente) =====
+    const cols = [
+      { t: 'CÓDIGO', x: 10, w: 24, a: 'left' },
+      { t: 'BOD.', x: 34, w: 13, a: 'center' },
+      { t: 'DESCRIPCIÓN', x: 47, w: 84, a: 'left' },
+      { t: 'CANT.', x: 131, w: 15, a: 'center' },
+      { t: 'V/ UNIT', x: 146, w: 26, a: 'right' },
+      { t: 'V/ TOTAL', x: 172, w: 28, a: 'right' }
+    ];
+    const filaAltura = 8;
+    const dibujarCabecera = () => {
+      pdf.setFillColor(...VERDE); pdf.rect(10, y, 190, filaAltura, 'F');
+      pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+      cols.forEach(c => {
+        const tx = c.a === 'right' ? c.x + c.w - 2 : (c.a === 'center' ? c.x + c.w / 2 : c.x + 2);
+        pdf.text(c.t, tx, y + 5.5, { align: c.a === 'left' ? undefined : c.a });
+      });
+      y += filaAltura;
+    };
+    dibujarCabecera();
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
+    productos.forEach((p, idx) => {
+      const desc = pdf.splitTextToSize(String(p.nombre || ''), 80);
+      const alto = Math.max(filaAltura, desc.length * 4.5 + 3.5);
+      if (y + alto > 265){ pdf.addPage(); y = 15; dibujarCabecera(); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); }
+      if (idx % 2 === 0){ pdf.setFillColor(246, 250, 243); pdf.rect(10, y, 190, alto, 'F'); }
+      pdf.setTextColor(40);
+      pdf.text(String(p.codigo || '—'), 12, y + 5.5);
+      pdf.text('1', 40.5, y + 5.5, { align: 'center' });
+      pdf.text(desc, 49, y + 5.5);
+      pdf.text(String(p.cantidad), 138.5, y + 5.5, { align: 'center' });
+      pdf.text(money(p.precioUnitario), 170, y + 5.5, { align: 'right' });
+      pdf.text(money(p.cantidad * p.precioUnitario), 198, y + 5.5, { align: 'right' });
+      pdf.setDrawColor(225); pdf.setLineWidth(0.2); pdf.line(10, y + alto, 200, y + alto);
+      y += alto;
     });
-    y = pdf.lastAutoTable.finalY + 4;
+    pdf.setDrawColor(...VERDE); pdf.setLineWidth(0.6);
+    pdf.rect(10, y - (productos.length ? 0 : 0), 0, 0); // sin marco extra
+    y += 5;
 
-    // ===== Totales (formato contable completo) =====
+    // ===== Totales (formato contable) =====
     const totalProductos = productos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
     const subtotal = typeof r.subtotal === 'number' ? r.subtotal : totalProductos;
     const iva = typeof r.iva === 'number' ? r.iva : Math.round(subtotal * CONFIG.iva);
     const total = typeof r.precioTotal === 'number' ? r.precioTotal : subtotal + iva;
-    const filas = [
+    const filasTot = [
       ['TOTAL PRODUCTOS', money(totalProductos)],
       ['DESCUENTOS', money(0)],
       ['SUBTOTAL', money(subtotal)],
       [r.exentaIva ? 'IVA (EXENTA)' : 'IVA 19%', money(iva)],
       ['RTE FUENTE', money(0)], ['RTE IVA', money(0)], ['RTE ICA', money(0)]
     ];
-    pdf.autoTable({
-      startY: y,
-      body: filas,
-      theme: 'plain',
-      bodyStyles: { fontSize: 9, textColor: 60 },
-      columnStyles: { 0: { halign: 'right', fontStyle: 'bold', cellWidth: 60 }, 1: { halign: 'right', cellWidth: 32 } },
-      margin: { left: W - 102, right: 10 }
+    if (y + filasTot.length * 5.5 + 30 > 270){ pdf.addPage(); y = 15; }
+    pdf.setFontSize(9); pdf.setTextColor(60);
+    filasTot.forEach(([lab, val]) => {
+      pdf.setFont('helvetica', 'bold'); pdf.text(lab, 162, y, { align: 'right' });
+      pdf.setFont('helvetica', 'normal'); pdf.text(val, 198, y, { align: 'right' });
+      y += 5.5;
     });
-    y = pdf.lastAutoTable.finalY + 2;
-    pdf.setFillColor(...VERDE); pdf.roundedRect(W - 102, y, 92, 10, 1.5, 1.5, 'F');
+    y += 1;
+    pdf.setFillColor(...VERDE); pdf.roundedRect(108, y, 92, 10, 1.5, 1.5, 'F');
     pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
-    pdf.text('TOTAL FACTURADO', W - 98, y + 7);
-    pdf.text(money(total), W - 14, y + 7, { align: 'right' });
+    pdf.text('TOTAL FACTURADO', 112, y + 7);
+    pdf.text(money(total), 196, y + 7, { align: 'right' });
     y += 16;
 
     if (r.observaciones){
@@ -1628,237 +1675,6 @@ async function generateRemisionPDF(remisionId){
     pdf.save(filename);
     return filename;
   } catch (e){ alert('❌ Error generando PDF: ' + e.message); }
-}
-
-/* ============================================================
-   12b. EXCEL DE REMISIÓN (formato TECNOCOLJET, 42 filas x 10 col)
-   ============================================================ */
-async function downloadRemisionExcel(remisionId){
-  try {
-    if (typeof XLSX === 'undefined'){ alert('⚠️ La librería de Excel no cargó. Recarga la página.'); return; }
-    const doc = await db.collection('remisiones').doc(remisionId).get();
-    if (!doc.exists){ alert('❌ Remisión no encontrada'); return; }
-    const r = doc.data();
-    const productos = r.productos || [];
-    if (!productos.length){ alert('⚠️ Esta remisión no tiene productos'); return; }
-    const client = S.clientes[r.clientId] || {};
-
-    const data = [];
-    for (let i = 0; i < 4; i++) data.push([]);                 // filas 1-4
-    data.push(['', '', 'REMISION']);                           // fila 5
-    data.push(['', '', r.numero]);                             // fila 6
-    data.push(['', '', '    ']); data.push([]); data.push([]); // filas 7-9
-    data.push(['Razon social', client.razonSocial || r.clientName || '']); // fila 10
-    data.push(['Direccion', client.direccion || '']);
-    data.push(['Telefono', client.telefono || '']);
-    const excelDate = Math.floor((new Date() - new Date(1899, 11, 30)) / 86400000);
-    data.push(['Nit', client.documento || '', '', '', 'F.Remision', '', '', excelDate]); // fila 13
-    data.push(['Ciudad', client.ciudad || '']);
-    data.push([]); data.push([]);
-    data.push(['', '', '', '', '', '', '', 'nit ' + CONFIG.empresa.nit]); // fila 17
-    data.push(['', '', '', '', CONFIG.empresa.regimen]);
-    data.push([]);
-    data.push(['CODIGO', 'BODEGA', 'DESCRIPCION', 'LOTE', 'CANTIDAD', '', '', 'V/ UNIT', 'V/TOTAL']); // fila 20
-    productos.forEach(p => data.push([p.codigo, 1, p.nombre, '', p.cantidad, '', '', p.precioUnitario, p.cantidad * p.precioUnitario]));
-    for (let i = productos.length; i < 10; i++) data.push([]);
-    const totalProductos = productos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
-    const subtotal = typeof r.subtotal === 'number' ? r.subtotal : totalProductos;
-    const iva = typeof r.iva === 'number' ? r.iva : (r.exentaIva ? 0 : Math.round(subtotal * CONFIG.iva));
-    const totalConIva = typeof r.precioTotal === 'number' ? r.precioTotal : subtotal + iva;
-    data.push(['', '', '', '', 'TOTAL PRODUCTOS', '', '', '', totalProductos]);
-    data.push(['', '', '', '', 'DESCUENTOS', '', '', '', 0]);
-    data.push(['', '', '', '', 'DESCUENTOS PROMO', '', '', '', 0]);
-    data.push(['', '', '', '', 'OTROS DESCUENTOS', '', '', '', 0]);
-    data.push(['', '', '', '', 'SUBTOTAL', '', '', '', subtotal]);
-    data.push(['', '', '', '', 'IVA', '', '', '', iva]);
-    data.push(['', '', '', '', 'TOTAL CON IVA', '', '', '', totalConIva]);
-    data.push(['', '', '', '', 'RTE FUENTE', '', '', '', 0]);
-    data.push(['O. DE COMPRA', '', '', '', 'RTE IVA', '', '', '', 0]);
-    data.push(['', '', '', '', 'RTE ICA', '', '', '', 0]);
-    data.push(['', '', '', '', 'TOTAL FACTURADO', '', '', '', totalConIva]);
-    data.push([]);
-    data.push(['TECNOCOLJET Elaborado', '', '', '', '', '', '', 'RECIBE CONFORME']);
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    ws['!cols'] = [{wch:12},{wch:8},{wch:32},{wch:8},{wch:16},{wch:8},{wch:8},{wch:12},{wch:15},{wch:8}];
-    if (ws['H13']){ ws['H13'].t = 'n'; ws['H13'].z = 'dd/mm/yyyy'; }
-    const numFmt = '#,##0';
-    for (let i = 0; i < productos.length; i++){
-      const row = 21 + i;
-      if (ws['H' + row]) ws['H' + row].z = numFmt;
-      if (ws['I' + row]) ws['I' + row].z = numFmt;
-    }
-    for (let i = 31; i <= 41; i++){ if (ws['I' + i]) ws['I' + i].z = numFmt; }
-    XLSX.utils.book_append_sheet(wb, ws, 'Remisión');
-    const filename = `REMISION_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.xlsx`;
-    XLSX.writeFile(wb, filename);
-  } catch (e){ alert('❌ Error generando Excel: ' + e.message); }
-}
-
-/* ============================================================
-   14. ADMIN — NUESTROS PRODUCTOS (base separada con 3 tablas:
-       Lista de insumos / Lista de repuestos / Lista de servicios)
-   ============================================================ */
-const NP_TABLAS = { insumos: 'Insumos', repuestos: 'Repuestos', servicios: 'Servicios' };
-const NP_ICONOS = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
-S.npData = { insumos: [], repuestos: [], servicios: [] };
-S.npCampoNombre = {}; S.npCamposExtra = {};
-
-// Las 3 tablas viven en la misma base principal — usamos atAll/atFetch con autodetección
-async function npAll(categoria){ return await atAll(categoria); }
-async function npWrite(categoria, path, method, body){
-  return await atFetch(categoria, path, { method, body: body ? JSON.stringify(body) : undefined });
-}
-
-async function loadNuestrosProductos(){
-  const box = $('nuestrosProductosList');
-  box.innerHTML = '<div class="loading">Cargando productos de Airtable...</div>';
-  try {
-    const [ins, rep, ser] = await Promise.all([npAll('insumos'), npAll('repuestos'), npAll('servicios')]);
-    S.npData = { insumos: ins, repuestos: rep, servicios: ser };
-    S.npSchema = {};
-    for (const cat of Object.keys(NP_TABLAS)){
-      // 1) Intentar con el esquema oficial de la tabla (incluye columnas vacías)
-      const nombreTabla = S.tablaResuelta[cat] || NP_TABLAS[cat];
-      let schema = null;
-      try { schema = await getTableSchema(nombreTabla); } catch (e){ console.warn('Sin esquema para', nombreTabla); }
-      if (schema && schema.length){
-        const primario = schema.find(f => f.primary) || schema[0];
-        S.npCampoNombre[cat] = primario.name;
-        S.npSchema[cat] = schema.filter(f => f.name !== primario.name).slice(0, 8);
-        S.npCamposExtra[cat] = S.npSchema[cat].map(f => f.name);
-        // Detectar la columna de código para ordenar
-        const todosNombres = schema.map(f => f.name);
-        S.npCampoCodigo = S.npCampoCodigo || {};
-        S.npCampoCodigo[cat] = todosNombres.find(k => /c[oó]digo/i.test(k)) ||
-                               todosNombres.find(k => /referencia|^id$/i.test(k)) || null;
-      } else {
-        // 2) Respaldo: deducir de los registros existentes
-        const campos = {};
-        S.npData[cat].forEach(r => Object.keys(r.fields).forEach(k => { campos[k] = campos[k] || []; campos[k].push(r.fields[k]); }));
-        const nombres = Object.keys(campos);
-        const preferidos = ['Nombre del producto', 'Nombre', 'Producto', 'Servicio', 'Repuesto', 'Insumo', 'Descripción', 'Descripcion'];
-        S.npCampoNombre[cat] = preferidos.find(p => nombres.includes(p)) ||
-          nombres.find(k => campos[k].some(v => typeof v === 'string')) || nombres[0] || 'Nombre';
-        S.npCamposExtra[cat] = nombres.filter(k =>
-          k !== S.npCampoNombre[cat] &&
-          campos[k].every(v => typeof v === 'string' || typeof v === 'number')
-        ).slice(0, 8);
-        S.npSchema[cat] = S.npCamposExtra[cat].map(k => ({ name: k, type: 'singleLineText', choices: null }));
-        S.npCampoCodigo = S.npCampoCodigo || {};
-        S.npCampoCodigo[cat] = nombres.find(k => /c[oó]digo/i.test(k)) ||
-                               nombres.find(k => /referencia|^id$/i.test(k)) || null;
-      }
-    }
-    renderNuestrosProductos();
-  } catch (e){
-    box.innerHTML = `<p class="msg msg-error">${esc(e.message)}</p>
-      <button class="btn btn-sm" onclick="loadNuestrosProductos()">🔄 Reintentar</button>`;
-  }
-}
-
-function renderNuestrosProductos(){
-  const box = $('nuestrosProductosList');
-  const filtro = ($('npBuscar').value || '').trim().toLowerCase();
-  const total = S.npData.insumos.length + S.npData.repuestos.length + S.npData.servicios.length;
-  let html = `<div style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:9px;padding:9px 14px;font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">
-    🛒 ${total} producto${total === 1 ? '' : 's'} en total · 🧪 ${S.npData.insumos.length} insumos · 🔩 ${S.npData.repuestos.length} repuestos · 🛠️ ${S.npData.servicios.length} servicios
-  </div>`;
-  Object.keys(NP_TABLAS).forEach(cat => {
-    const nombreDe = r => String(r.fields[S.npCampoNombre[cat]] ?? 'Sin nombre');
-    const codigoDe = r => S.npCampoCodigo?.[cat] ? String(r.fields[S.npCampoCodigo[cat]] ?? '') : '';
-    const items = S.npData[cat]
-      .filter(r => !filtro || nombreDe(r).toLowerCase().includes(filtro) || codigoDe(r).toLowerCase().includes(filtro))
-      .sort((a, b) => {
-        const ca = codigoDe(a), cb = codigoDe(b);
-        if (ca && cb) return ca.localeCompare(cb, 'es', { numeric: true }); // orden por código (numérico)
-        if (ca) return -1;
-        if (cb) return 1;
-        return nombreDe(a).localeCompare(nombreDe(b));
-      });
-    html += `<h3 style="margin:16px 0 8px;color:var(--verde-oscuro)">${NP_ICONOS[cat]} ${cat.charAt(0).toUpperCase() + cat.slice(1)} <span style="color:var(--gris);font-weight:400;font-size:14px">(${items.length})</span></h3>`;
-    if (!items.length){ html += '<p style="color:var(--gris);font-size:13px;padding:4px 0 8px">Sin registros</p>'; return; }
-    html += items.map(r => {
-      const cod = codigoDe(r);
-      const extras = (S.npCamposExtra[cat] || []).filter(k => k !== S.npCampoCodigo?.[cat]).map(k => r.fields[k] != null && r.fields[k] !== ''
-        ? `${esc(k)}: ${typeof r.fields[k] === 'number' && /precio|valor|costo/i.test(k) ? money(r.fields[k]) : esc(r.fields[k])}` : null
-      ).filter(Boolean).join(' · ');
-      return `<div style="background:#f9fafb;padding:10px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-left:3px solid var(--verde)">
-        <span>${cod ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px;margin-right:6px">${esc(cod)}</span>` : ''}<strong>${esc(nombreDe(r))}</strong>${extras ? '<br><span style="color:var(--gris);font-size:12px">' + extras + '</span>' : ''}</span>
-        <button class="btn btn-sm btn-rojo" onclick="deleteNuestroProducto('${cat}','${r.id}')">🗑️</button>
-      </div>`;
-    }).join('');
-  });
-  box.innerHTML = html;
-}
-
-function openNewProductoModal(){
-  openOverlay(`
-    <h2 style="margin-bottom:14px">➕ Nuevo Producto</h2>
-    <div class="form-group"><label>Categoría *</label>
-      <select id="npCategoria" onchange="renderCamposNuevoProducto()">
-        <option value="insumos">🧪 Insumo</option>
-        <option value="repuestos">🔩 Repuesto</option>
-        <option value="servicios">🛠️ Servicio</option>
-      </select>
-    </div>
-    <div id="npCamposDinamicos"></div>
-    <div style="display:flex;gap:10px;margin-top:6px">
-      <button class="btn" style="flex:1" id="npSaveBtn" onclick="saveNuestroProducto()">💾 Crear Producto</button>
-      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
-    </div>`);
-  renderCamposNuevoProducto();
-}
-
-function renderCamposNuevoProducto(){
-  const cat = $('npCategoria').value;
-  const campos = S.npSchema?.[cat] || [];
-  const extras = campos.map((f, i) => {
-    if (f.type === 'singleSelect' && f.choices?.length){
-      return `<div class="form-group"><label>${esc(f.name)}</label>
-        <select id="npx${i}"><option value="">-- Seleccionar --</option>${f.choices.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
-    }
-    const tipo = ['number', 'currency', 'percent'].includes(f.type) ? 'number' : (f.type === 'date' ? 'date' : 'text');
-    return `<div class="form-group"><label>${esc(f.name)}</label><input type="${tipo}" id="npx${i}" placeholder="Opcional"${tipo === 'number' ? ' step="any"' : ''}></div>`;
-  }).join('');
-  $('npCamposDinamicos').innerHTML =
-    `<div class="form-group"><label>${esc(S.npCampoNombre[cat] || 'Nombre')} *</label><input type="text" id="npNombre" placeholder="Ej: Tinta negra 500ml"></div>` + extras;
-}
-
-async function saveNuestroProducto(){
-  const cat = $('npCategoria').value;
-  const nombre = $('npNombre').value.trim();
-  if (!nombre){ alert('⚠️ Escribe el nombre'); return; }
-  const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
-  const fields = { [S.npCampoNombre[cat] || 'Nombre']: nombre };
-  (S.npSchema?.[cat] || []).forEach((f, i) => {
-    const el = $('npx' + i);
-    if (!el) return;
-    const v = el.value.trim();
-    if (!v) return;
-    fields[f.name] = ['number', 'currency', 'percent'].includes(f.type) ? Number(v) : v;
-  });
-  try {
-    const res = await npWrite(cat, '', 'POST', { fields });
-    S.npData[cat].push(res);
-    closeOverlay();
-    flash('adminMsg', `✅ "${esc(nombre)}" creado en ${NP_TABLAS[cat]}`);
-    renderNuestrosProductos();
-  } catch (e){ alert('❌ No se pudo crear en Airtable: ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = '💾 Crear Producto'; }
-}
-
-async function deleteNuestroProducto(cat, recordId){
-  const r = S.npData[cat].find(x => x.id === recordId);
-  const nombre = r ? String(r.fields[S.npCampoNombre[cat]] || 'este producto') : 'este producto';
-  if (!confirm(`⚠️ ¿Eliminar "${nombre}" de ${NP_TABLAS[cat]}?\n\nEsta acción no se puede deshacer.`)) return;
-  try {
-    await npWrite(cat, `/${recordId}`, 'DELETE');
-    S.npData[cat] = S.npData[cat].filter(x => x.id !== recordId);
-    flash('adminMsg', `🗑️ "${esc(nombre)}" eliminado`);
-    renderNuestrosProductos();
-  } catch (e){ alert('❌ No se pudo eliminar: ' + e.message); }
 }
 
 /* ============================================================
