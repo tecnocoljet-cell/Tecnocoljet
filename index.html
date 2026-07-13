@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.5.0 - Materiales del reporte con buscador en Insumos y Repuestos + opcion manual
+     VERSION: 8.6.0 - Busqueda inteligente con tolerancia a errores en todos los buscadores
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -443,6 +443,59 @@ const parsePrecio = v => {
   }
   return 0;
 };
+
+// ====== BÚSQUEDA INTELIGENTE (encuentra lo más parecido, tolera errores de escritura) ======
+function _lev(a, b){ // distancia de edición entre dos palabras
+  if (Math.abs(a.length - b.length) > 2) return 99;
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++){
+    const cur = [i];
+    for (let j = 1; j <= n; j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+function similitud(query, texto){
+  const q = normalizar(query), t = normalizar(texto);
+  if (!q || !t) return 0;
+  if (t === q) return 100;
+  if (t.startsWith(q)) return 92;
+  if (t.includes(q)) return 84;
+  const palabrasT = t.split(' ');
+  const palabrasQ = q.split(' ');
+  let suma = 0;
+  for (const qw of palabrasQ){
+    let mejor = 0;
+    for (const w of palabrasT){
+      if (w === qw){ mejor = 75; break; }
+      if (w.startsWith(qw)) mejor = Math.max(mejor, 65);
+      else if (qw.length >= 3 && w.includes(qw)) mejor = Math.max(mejor, 55);
+      else if (qw.length >= 4){
+        const d = _lev(qw, w);
+        const tolerancia = qw.length <= 5 ? 1 : 2;
+        if (d <= tolerancia) mejor = Math.max(mejor, 50 - d * 8);
+        // prefijo con error de tipeo: "unic" encuentra "unique"
+        if (w.length > qw.length && _lev(qw, w.slice(0, qw.length)) <= 1) mejor = Math.max(mejor, 48);
+      }
+    }
+    suma += mejor;
+  }
+  return suma / palabrasQ.length;
+}
+
+// Ordena una lista por parecido con lo buscado
+function buscarParecidos(query, items, getTexto, max = 8, minimo = 30){
+  return items
+    .map(it => ({ it, score: similitud(query, getTexto(it)) }))
+    .filter(x => x.score >= minimo)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, max)
+    .map(x => x.it);
+}
 
 function showScreen(id){
   document.querySelectorAll('[id^="scr-"]').forEach(el => el.classList.add('hidden'));
@@ -1018,10 +1071,9 @@ function filterMateriales(){
   const box = $('matResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
   const iconos = { insumos: '🧪', repuestos: '🔩' };
-  const matches = S.productos
-    .filter(p => (p.categoria === 'insumos' || p.categoria === 'repuestos') &&
-                 (p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)))
-    .slice(0, 6);
+  const matches = buscarParecidos(q,
+    S.productos.filter(p => p.categoria === 'insumos' || p.categoria === 'repuestos'),
+    p => `${p.nombre} ${p.codigo}`, 6);
   box.innerHTML = matches.map(p => `
     <div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;align-items:center;gap:6px" onclick="addMaterialFromCatalog('${p.id}')">
       <span>${iconos[p.categoria] || '📦'}</span>
@@ -1517,7 +1569,7 @@ function filterRemClientes(){
   const q = $('remClienteBuscar').value.trim().toLowerCase();
   const box = $('remClienteResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const matches = Object.values(S.clientes).filter(c => c.name.toLowerCase().includes(q) || (c.razonSocial || '').toLowerCase().includes(q)).slice(0, 6);
+  const matches = buscarParecidos(q, Object.values(S.clientes), c => `${c.name} ${c.razonSocial || ''} ${c.documento || ''}`, 6);
   box.innerHTML = matches.map(c =>
     `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectRemCliente('${c.id}')">🏢 ${esc(c.name)}</div>`
   ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
@@ -1543,7 +1595,7 @@ function filterRemProductos(){
   const box = $('remProdResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
   const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
-  const matches = S.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)).slice(0, 8);
+  const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
   box.innerHTML = matches.map(p => {
     const acordado = precioAcordadoDe(p);
     const precio = acordado ? acordado.precio : (p.precioBase || 0);
@@ -1969,8 +2021,11 @@ function renderNuestrosProductos(){
   Object.keys(NP_TABLAS).forEach(cat => {
     const nombreDe = r => String(r.fields[S.npCampoNombre[cat]] ?? 'Sin nombre');
     const codigoDe = r => S.npCampoCodigo?.[cat] ? String(r.fields[S.npCampoCodigo[cat]] ?? '') : '';
-    const items = S.npData[cat]
-      .filter(r => !filtro || nombreDe(r).toLowerCase().includes(filtro) || codigoDe(r).toLowerCase().includes(filtro))
+    const base = filtro
+      ? buscarParecidos(filtro, S.npData[cat], r => `${nombreDe(r)} ${codigoDe(r)}`, 999)
+      : S.npData[cat];
+    const items = base
+      .filter(() => true)
       .sort((a, b) => {
         const ca = codigoDe(a), cb = codigoDe(b);
         if (ca && cb) return ca.localeCompare(cb, 'es', { numeric: true });
@@ -2068,9 +2123,9 @@ async function deleteNuestroProducto(cat, recordId){
 function renderClientesList(filtro = ''){
   const box = $('clientesList');
   const total = Object.keys(S.clientes).length;
-  const lista = Object.values(S.clientes)
-    .filter(c => !filtro || c.name.toLowerCase().includes(filtro) || (c.documento || '').includes(filtro))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const lista = filtro
+    ? buscarParecidos(filtro, Object.values(S.clientes), c => `${c.name} ${c.razonSocial || ''} ${c.documento || ''}`, 999)
+    : Object.values(S.clientes).sort((a, b) => a.name.localeCompare(b.name));
   const contador = `<div style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:9px;padding:9px 14px;font-weight:700;font-size:14px;margin-bottom:12px;text-align:center">
     👥 ${total} cliente${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'}${filtro ? ` · mostrando ${lista.length} coincidencia${lista.length === 1 ? '' : 's'}` : ''}
   </div>`;
