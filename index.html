@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.4.1 - Lista de trabajos predeterminados personalizada
+     VERSION: 8.5.0 - Materiales del reporte con buscador en Insumos y Repuestos + opcion manual
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -223,8 +223,12 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
         </div>
         <div class="form-group"><input type="text" id="eqViscosidad" placeholder="Viscosidad"></div>
         <label style="font-weight:600;font-size:14px;margin-bottom:6px;display:block">🧰 Materiales utilizados</label>
+        <div class="form-group" style="margin-bottom:8px">
+          <input type="text" id="matBuscar" placeholder="🔍 Buscar en insumos y repuestos..." oninput="filterMateriales()" autocomplete="off">
+          <div id="matResultados"></div>
+        </div>
         <div id="materialesRows"></div>
-        <button class="btn btn-sm btn-gris" style="margin-bottom:14px" onclick="addMaterialRow()">➕ Agregar material</button>
+        <button class="btn btn-sm btn-gris" style="margin-bottom:14px" onclick="addMaterialRow()">➕ Agregar manualmente</button>
         <div class="form-group">
           <label>📝 Observaciones del equipo</label>
           <textarea id="eqObservaciones" placeholder="Notas sobre este equipo"></textarea>
@@ -1004,18 +1008,44 @@ function onEquipmentSelected(){
   $('eqTrabajos').value = ''; $('eqHorasFiltro').value = ''; $('eqPresionBomba').value = '';
   $('eqViscosidad').value = ''; $('eqObservaciones').value = ''; $('eqFotos').value = '';
   $('materialesRows').innerHTML = '';
-  addMaterialRow();
+  $('matBuscar').value = ''; $('matResultados').innerHTML = '';
   $('equipmentWorkForm').classList.remove('hidden');
 }
 
-function addMaterialRow(){
+// Buscar materiales en el catálogo (solo Insumos y Repuestos)
+function filterMateriales(){
+  const q = $('matBuscar').value.trim().toLowerCase();
+  const box = $('matResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩' };
+  const matches = S.productos
+    .filter(p => (p.categoria === 'insumos' || p.categoria === 'repuestos') &&
+                 (p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)))
+    .slice(0, 6);
+  box.innerHTML = matches.map(p => `
+    <div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;align-items:center;gap:6px" onclick="addMaterialFromCatalog('${p.id}')">
+      <span>${iconos[p.categoria] || '📦'}</span>
+      ${p.codigo ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px">${esc(p.codigo)}</span>` : ''}
+      <span>${esc(p.nombre)}</span>
+    </div>`).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias — agrégalo manualmente abajo</p>';
+}
+
+function addMaterialFromCatalog(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  if (!p) return;
+  addMaterialRow({ cantidad: 1, descripcion: p.nombre, referencia: p.codigo || '' });
+  $('matBuscar').value = ''; $('matResultados').innerHTML = '';
+}
+
+function addMaterialRow(prefill){
   const div = document.createElement('div');
   div.className = 'grid2';
   div.style.cssText = 'grid-template-columns:70px 1fr 1fr 36px;gap:8px;margin-bottom:8px;align-items:center';
+  const v = prefill || {};
   div.innerHTML = `
-    <input type="number" min="1" placeholder="Cant." class="mat-cant" style="padding:9px;border:2px solid #e5e7eb;border-radius:8px">
-    <input type="text" placeholder="Descripción" class="mat-desc" style="padding:9px;border:2px solid #e5e7eb;border-radius:8px">
-    <input type="text" placeholder="Referencia" class="mat-ref" style="padding:9px;border:2px solid #e5e7eb;border-radius:8px">
+    <input type="number" min="1" placeholder="Cant." class="mat-cant" value="${v.cantidad || ''}" style="padding:9px;border:2px solid ${prefill ? 'var(--verde)' : '#e5e7eb'};border-radius:8px">
+    <input type="text" placeholder="Descripción" class="mat-desc" value="${esc(v.descripcion || '')}" style="padding:9px;border:2px solid ${prefill ? 'var(--verde)' : '#e5e7eb'};border-radius:8px">
+    <input type="text" placeholder="Referencia" class="mat-ref" value="${esc(v.referencia || '')}" style="padding:9px;border:2px solid ${prefill ? 'var(--verde)' : '#e5e7eb'};border-radius:8px">
     <button class="btn btn-sm btn-rojo" onclick="this.parentElement.remove()">✕</button>`;
   $('materialesRows').appendChild(div);
 }
