@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.4.0 - Reportera: hora de salida automatica, trabajos con casillas, firma grande y PDF profesional con tarjetas por equipo y fotos
+     VERSION: 8.4.1 - Lista de trabajos predeterminados personalizada
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -982,20 +982,11 @@ async function loadClientEquipments(clientId, selectId){
 
 // Trabajos que se realizan con frecuencia (marcar con un toque)
 const TRABAJOS_COMUNES = [
-  'Mantenimiento preventivo general',
-  'Limpieza de cabezal de impresión',
-  'Limpieza general del equipo',
-  'Cambio de filtro principal',
-  'Cambio de filtro de tinta',
-  'Cambio de bomba',
-  'Calibración de viscosidad',
-  'Revisión de parámetros',
-  'Recarga de tinta',
-  'Recarga de solvente (makeup)',
-  'Purga del sistema hidráulico',
-  'Ajuste de mensajes de impresión',
-  'Prueba de impresión',
-  'Capacitación al operario'
+  'Limpieza general',
+  'Limpieza cabezal',
+  'Limpieza de filtro de aire',
+  'Llenado de insumos',
+  'Verificación de su funcionamiento'
 ];
 
 function renderTrabajosChecks(){
