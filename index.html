@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.6.0 - Busqueda inteligente con tolerancia a errores en todos los buscadores
+     VERSION: 8.6.1 - Buscador inteligente de clientes tambien en la Reportera del empleado
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -178,7 +178,8 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       </div>
       <div class="form-group">
         <label>🏢 Cliente *</label>
-        <select id="reportClientSelect" onchange="onReportClientChange()"><option value="">Cargando clientes...</option></select>
+        <input type="text" id="repClienteBuscar" placeholder="🔍 Escribe para buscar el cliente..." oninput="filterRepClientes()" autocomplete="off">
+        <div id="repClienteResultados"></div>
       </div>
       <div id="reportClientInfo"></div>
       <div class="form-group">
@@ -991,28 +992,37 @@ async function devolverRemision(){
    8. EMPLEADO — REPORTERA VIRTUAL
    ============================================================ */
 async function initReportera(){
-  S.reportEquipments = []; S.selectedEquipment = null;
+  S.reportEquipments = []; S.selectedEquipment = null; S.repClienteId = null;
   renderAddedEquipments();
   $('equipmentSection').style.display = 'none';
   $('reportFooterSection').style.display = 'none';
   $('equipmentWorkForm').classList.add('hidden');
+  $('repClienteBuscar').value = ''; $('repClienteResultados').innerHTML = ''; $('reportClientInfo').innerHTML = '';
   initSignatureCanvas();
-  const sel = $('reportClientSelect');
-  sel.innerHTML = '<option value="">Cargando clientes...</option>';
+  $('repClienteBuscar').placeholder = '⏳ Cargando clientes...';
   try {
     await ensureBaseData();
-    const ordenados = Object.values(S.clientes).sort((a, b) => a.name.localeCompare(b.name));
-    sel.innerHTML = '<option value="">-- Selecciona el cliente --</option>' +
-      ordenados.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  } catch (e){ sel.innerHTML = '<option value="">Error cargando clientes</option>'; }
+    $('repClienteBuscar').placeholder = '🔍 Escribe para buscar el cliente...';
+  } catch (e){ $('repClienteBuscar').placeholder = '❌ Error cargando clientes'; }
 }
 
-async function onReportClientChange(){
-  const id = $('reportClientSelect').value;
-  const info = $('reportClientInfo');
-  if (!id){ info.innerHTML = ''; $('equipmentSection').style.display = 'none'; $('reportFooterSection').style.display = 'none'; return; }
+function filterRepClientes(){
+  const q = $('repClienteBuscar').value.trim();
+  const box = $('repClienteResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const matches = buscarParecidos(q, Object.values(S.clientes), c => `${c.name} ${c.razonSocial || ''} ${c.documento || ''}`, 6);
+  box.innerHTML = matches.map(c =>
+    `<div style="padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectRepCliente('${c.id}')">🏢 ${esc(c.name)}</div>`
+  ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+async function selectRepCliente(id){
   const c = S.clientes[id];
-  info.innerHTML = `<div class="info-card">
+  if (!c) return;
+  S.repClienteId = id;
+  $('repClienteBuscar').value = c.name;
+  $('repClienteResultados').innerHTML = '';
+  $('reportClientInfo').innerHTML = `<div class="info-card">
     <p><strong>🏢 ${esc(c.razonSocial)}</strong></p>
     <p>NIT: ${esc(c.documento) || '—'} · ${esc(c.ciudad) || '—'}</p>
     <p>📍 ${esc(c.direccion) || 'Sin dirección'}</p>
@@ -1174,7 +1184,7 @@ function clearSignature(){ if (sigCtx){ sigCtx.clearRect(0, 0, sigCanvas.width, 
 
 async function submitReport(){
   const tecnico = $('technicianName').value.trim();
-  const clientId = $('reportClientSelect').value;
+  const clientId = S.repClienteId;
   const receptorNombre = $('receptorNombre').value.trim();
   const receptorCargo = $('receptorCargo').value.trim();
   if (!tecnico){ alert('⚠️ Escribe tu nombre'); return; }
@@ -1216,7 +1226,7 @@ async function submitReport(){
     await db.collection('reports').add(report);
     alert('✅ Reporte enviado exitosamente para aprobación del administrador');
     // Reset
-    $('technicianName').value = ''; $('reportClientSelect').value = ''; $('reportClientInfo').innerHTML = '';
+    $('technicianName').value = ''; S.repClienteId = null; $('repClienteBuscar').value = ''; $('reportClientInfo').innerHTML = '';
     $('horaEntrada').value = ''; $('horaSalida').value = ''; $('horasTrabajadas').value = '';
     $('observaciones').value = ''; $('receptorNombre').value = ''; $('receptorCargo').value = '';
     clearSignature(); S.reportEquipments = []; renderAddedEquipments();
@@ -2294,7 +2304,7 @@ async function loadClientReportes(clientId){
 
 /* ---- Modal de equipos (compartido reportera/admin) ---- */
 function openAddEquipmentModal(ctx, clientId){
-  S.equipModalCtx = { ctx, clientId: clientId || $('reportClientSelect').value };
+  S.equipModalCtx = { ctx, clientId: clientId || S.repClienteId };
   S.equipEditId = null;
   if (!S.equipModalCtx.clientId){ alert('⚠️ Selecciona primero un cliente'); return; }
   $('equipModalTitle').textContent = '➕ Registrar Equipo';
