@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.12.1 - Remisiones entregadas pasan de Creadas a Entregas Realizadas con boton Ver imagen
+     VERSION: 8.12.2 - Estados de remisiones sincronizados en ambas direcciones (Airtable manda)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1049,6 +1049,11 @@ async function actualizarEntrega(cambiosFirebase, semantico){
     try { await patchAirtable(it.airtableId); } catch (e){ console.error('Airtable no actualizado:', e.message); }
   } else {
     await patchAirtable(it.airtableId); // si falla aquí, sí queremos ver el error
+    // Actualizar también la copia de esta remisión en el sistema (si fue creada desde la app)
+    try {
+      const gemelas = await db.collection('remisiones').where('airtableId', '==', it.airtableId).get();
+      await Promise.all(gemelas.docs.map(d => d.ref.update(cambiosFirebase)));
+    } catch (e){ console.warn('Copia en el sistema no actualizada:', e.message); }
     await db.collection('entregas_evidencia').add({
       airtableId: it.airtableId, numero: it.numero || '', clientName: it.clientName || '',
       ...cambiosFirebase, registradoEn: ts()
@@ -1894,14 +1899,25 @@ async function loadCreatedRemisiones(){
     try {
       const cols = await columnasRemisiones();
       if (cols.codigo){
-        const registros = await atAll('remisiones', `fields%5B%5D=${encodeURIComponent(cols.codigo)}`);
+        const camposPedir = `fields%5B%5D=${encodeURIComponent(cols.codigo)}` + (cols.estado ? `&fields%5B%5D=${encodeURIComponent(cols.estado)}` : '');
+        const registros = await atAll('remisiones', camposPedir);
         const idsAirtable = new Set(registros.map(r => r.id));
+        const estadoAT = {}; registros.forEach(r => { if (cols.estado) estadoAT[r.id] = r.fields[cols.estado] || ''; });
+        // a) Borradas en Airtable -> borrar en el sistema
         const huerfanas = snap.docs.filter(d => d.data().airtableId && !idsAirtable.has(d.data().airtableId));
         if (huerfanas.length){
           await Promise.all(huerfanas.map(d => db.collection('remisiones').doc(d.id).delete()));
           flash('adminMsg', `🔄 ${huerfanas.length} remisión(es) eliminada(s) en Airtable — sincronizado y numeración ajustada`);
-          snap = await db.collection('remisiones').get();
         }
+        // b) Estado distinto en Airtable -> corregir en el sistema (ej. Entregado)
+        const desactualizadas = snap.docs.filter(d => {
+          const r = d.data();
+          return r.airtableId && estadoAT[r.airtableId] && estadoAT[r.airtableId] !== (r.estado || 'Pendiente');
+        });
+        if (desactualizadas.length){
+          await Promise.all(desactualizadas.map(d => d.ref.update({ estado: estadoAT[d.data().airtableId] })));
+        }
+        if (huerfanas.length || desactualizadas.length) snap = await db.collection('remisiones').get();
       }
     } catch (e){ console.warn('Sin sincronización de borrados:', e.message); }
     if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin remisiones pendientes</p>'; return; }
