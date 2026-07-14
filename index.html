@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.7.3 - Sello en tinta verde con logo solido y legible
+     VERSION: 8.7.4 - Espacio corregido entre observaciones y la zona del sello y firmas
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1522,8 +1522,9 @@ async function generateReportPDF(reportId){
   }
 
   // ===== Firmas =====
-  if (y + 48 > LIMITE){ pdf.addPage(); header(); }
-  const yf = Math.max(y + 22, 232);
+  // El sello sube ~33 pt sobre la línea: reservar ese espacio para no chocar con lo anterior
+  if (y + 78 > 288){ pdf.addPage(); header(); }
+  const yf = Math.max(y + 40, 240);
   if (r.receptorFirma){ try { pdf.addImage(r.receptorFirma, 'PNG', 118, yf - 26, 68, 24); } catch (e){} }
   // Sello oficial TECNOCOLJET sobre el lado del técnico (proporción 420x166)
   try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 28, yf - 33, 52, 29); } catch (e){}
