@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.10.0 - Al aprobar reporte o crear remision: PDF descargado y dialogo de impresion automatico
+     VERSION: 8.11.0 - Eliminar reportes y sincronizacion de remisiones borradas en Airtable
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1366,7 +1366,8 @@ async function loadPendingReports(){
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm btn-azul" onclick="viewReportDetails('${d.id}')">👁️ Ver detalles</button>
           <button class="btn btn-sm" onclick="approveReport('${d.id}','${esc(r.clientName)}')">✅ Aprobar</button>
-          <button class="btn btn-sm btn-rojo" onclick="rejectReport('${d.id}')">❌ Rechazar</button>
+          <button class="btn btn-sm btn-naranja" onclick="rejectReport('${d.id}')">❌ Rechazar</button>
+          <button class="btn btn-sm btn-rojo" onclick="deleteReport('${d.id}')">🗑️</button>
         </div>
       </div>`;
     }).join('');
@@ -1407,9 +1408,22 @@ async function viewReportDetails(reportId){
       ${r.receptorFirma ? `<p style="margin-top:10px"><strong>Firma de quien recibe:</strong></p><img src="${r.receptorFirma}" style="max-width:230px;border:1px solid #eee;border-radius:8px">` : ''}
       <div style="display:flex;gap:10px;margin-top:16px">
         <button class="btn" style="flex:1" onclick="generateReportPDF('${reportId}')">📄 Descargar PDF</button>
+        <button class="btn btn-rojo" onclick="deleteReport('${reportId}')">🗑️</button>
         <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cerrar</button>
       </div>`);
   } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function deleteReport(reportId, clientId){
+  if (!confirm('⚠️ ¿Eliminar este reporte de mantenimiento?\n\nSe borrará definitivamente del sistema, incluyendo fotos y firma.')) return;
+  if (!confirm('Confirma de nuevo: eliminar el reporte para siempre.')) return;
+  try {
+    await db.collection('reports').doc(reportId).delete();
+    closeOverlay();
+    flash('adminMsg', '🗑️ Reporte eliminado');
+    loadPendingReports();
+    if (clientId) loadClientReportes(clientId);
+  } catch (e){ alert('❌ Error eliminando: ' + e.message); }
 }
 
 async function saveReportEmail(reportId){
@@ -1875,7 +1889,21 @@ async function loadCreatedRemisiones(){
   const box = $('remisionesList');
   box.innerHTML = '<div class="loading">Cargando...</div>';
   try {
-    const snap = await db.collection('remisiones').get();
+    let snap = await db.collection('remisiones').get();
+    // Sincronizar borrados: si una remisión ya no existe en Airtable, quitarla también del sistema
+    try {
+      const cols = await columnasRemisiones();
+      if (cols.codigo){
+        const registros = await atAll('remisiones', `fields%5B%5D=${encodeURIComponent(cols.codigo)}`);
+        const idsAirtable = new Set(registros.map(r => r.id));
+        const huerfanas = snap.docs.filter(d => d.data().airtableId && !idsAirtable.has(d.data().airtableId));
+        if (huerfanas.length){
+          await Promise.all(huerfanas.map(d => db.collection('remisiones').doc(d.id).delete()));
+          flash('adminMsg', `🔄 ${huerfanas.length} remisión(es) eliminada(s) en Airtable — sincronizado y numeración ajustada`);
+          snap = await db.collection('remisiones').get();
+        }
+      }
+    } catch (e){ console.warn('Sin sincronización de borrados:', e.message); }
     if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin remisiones creadas</p>'; return; }
     const docs = snap.docs.sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 30);
     box.innerHTML = docs.map(d => {
@@ -2470,6 +2498,7 @@ async function loadClientReportes(clientId){
           <span class="badge ${badge}">${label}</span>
           <button class="btn btn-sm btn-azul" onclick="viewReportDetails('${d.id}')">👁️</button>
           <button class="btn btn-sm" onclick="generateReportPDF('${d.id}')">📥</button>
+          <button class="btn btn-sm btn-rojo" onclick="deleteReport('${d.id}','${clientId}')">🗑️</button>
         </span>
       </div>`;
     }).join('');
