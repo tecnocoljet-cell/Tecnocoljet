@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.7.4 - Espacio corregido entre observaciones y la zona del sello y firmas
+     VERSION: 8.8.0 - Informacion de Entrega lee las remisiones pendientes directamente de Airtable
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -862,56 +862,125 @@ async function loadClientesTab(){
 /* ============================================================
    7. EMPLEADO — INFORMACIÓN DE ENTREGA
    ============================================================ */
+// Caché de remisiones pendientes (de Airtable y del sistema)
+S.entregaCache = {};
+
+// Columnas de la tabla Remisiones detectadas una vez
+async function columnasRemisiones(){
+  if (S._colsRem) return S._colsRem;
+  const campos = await getTableFields(S.tablaResuelta['remisiones'] || 'Remisiones') || [];
+  const b = (regex) => campos.find(f => regex.test(normalizar(f.name)))?.name || null;
+  S._colsRem = {
+    codigo: b(/codigo/), cliente: b(/cliente/), estado: b(/estado/),
+    productos: b(/productos/), precio: b(/precio|valor.*venta/),
+    responsable: b(/responsable.*(remision|creacion)|elaborad|creador/),
+    respEntrega: b(/responsable.*entrega/), formaPago: b(/forma.*pago|pago/),
+    observaciones: b(/observa/), motivoNoEntrega: b(/motivo/), fechaEntrega: b(/fecha.*entrega/)
+  };
+  return S._colsRem;
+}
+
 async function loadPendingRemisiones(){
   const box = $('entregasList');
   box.innerHTML = '<div class="loading">Cargando remisiones pendientes...</div>';
   try {
-    // Compatibilidad: remisiones nuevas usan 'estado', las antiguas pueden usar solo 'status'
-    const [s1, s2] = await Promise.all([
-      db.collection('remisiones').where('estado', '==', 'Pendiente').get(),
-      db.collection('remisiones').where('status', '==', 'pending').get()
-    ]);
-    const map = {};
-    s1.docs.concat(s2.docs).forEach(d => { map[d.id] = d; });
-    const docs = Object.values(map).filter(d => {
-      const r = d.data();
-      return (r.estado || 'Pendiente') === 'Pendiente';
-    }).sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
-    if (!docs.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">🎉 No hay entregas pendientes</p>'; return; }
-    box.innerHTML = docs.map(d => {
-      const r = d.data();
-      const nProd = (r.productos || []).length;
+    await ensureBaseData(); // para resolver nombres de clientes
+    S.entregaCache = {};
+    const items = [];
+
+    // 1. Pendientes en AIRTABLE (la fuente principal)
+    try {
+      const cols = await columnasRemisiones();
+      if (cols.estado){
+        const formula = `{${cols.estado}}='Pendiente'`;
+        const records = await atAll('remisiones', `filterByFormula=${encodeURIComponent(formula)}`);
+        records.forEach(rec => {
+          const f = rec.fields;
+          let clientName = '—', clientId = null;
+          const cli = cols.cliente ? f[cols.cliente] : null;
+          if (Array.isArray(cli) && cli.length){
+            clientId = cli[0];
+            clientName = S.clientes[clientId]?.name || 'Cliente';
+          } else if (typeof cli === 'string') clientName = cli;
+          const item = {
+            id: 'at_' + rec.id, source: 'airtable', airtableId: rec.id,
+            numero: cols.codigo ? f[cols.codigo] : '—',
+            clientName, clientId,
+            productosTexto: cols.productos ? (f[cols.productos] || '') : '',
+            precioTotal: cols.precio ? parsePrecio(f[cols.precio]) : 0,
+            responsable: cols.responsable ? (f[cols.responsable] || '') : '',
+            formaPago: cols.formaPago ? (f[cols.formaPago] || '') : '',
+            observaciones: cols.observaciones ? (f[cols.observaciones] || '') : ''
+          };
+          S.entregaCache[item.id] = item;
+          items.push(item);
+        });
+      }
+    } catch (e){ console.warn('No se pudieron leer pendientes de Airtable:', e.message); }
+
+    // 2. Pendientes en el SISTEMA que no estén ya listadas (sin sincronizar a Airtable)
+    try {
+      const [s1, s2] = await Promise.all([
+        db.collection('remisiones').where('estado', '==', 'Pendiente').get(),
+        db.collection('remisiones').where('status', '==', 'pending').get()
+      ]);
+      const vistos = new Set(items.map(i => i.airtableId));
+      const mapa = {};
+      s1.docs.concat(s2.docs).forEach(d => { mapa[d.id] = d; });
+      Object.values(mapa).forEach(d => {
+        const r = d.data();
+        if ((r.estado || 'Pendiente') !== 'Pendiente') return;
+        if (r.airtableId && vistos.has(r.airtableId)) return; // ya está por Airtable
+        const item = {
+          id: d.id, source: 'firebase', airtableId: r.airtableId || null,
+          numero: r.numero, clientName: r.clientName, clientId: r.clientId,
+          productos: r.productos || [], precioTotal: r.precioTotal || 0,
+          responsable: r.responsable || '', formaPago: r.formaPago || '',
+          observaciones: r.observaciones || '', createdAt: r.createdAt
+        };
+        S.entregaCache[item.id] = item;
+        items.push(item);
+      });
+    } catch (e){ console.warn('No se pudieron leer pendientes del sistema:', e.message); }
+
+    // 3. Ordenar por número descendente y pintar
+    items.sort((a, b) => (parseInt(b.numero) || 0) - (parseInt(a.numero) || 0));
+    if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">🎉 No hay entregas pendientes</p>'; return; }
+    box.innerHTML = items.map(it => {
+      const resumen = it.source === 'firebase'
+        ? `📦 ${(it.productos || []).length} producto(s)`
+        : (it.productosTexto ? `📦 ${esc(String(it.productosTexto).slice(0, 60))}${String(it.productosTexto).length > 60 ? '…' : ''}` : '📦 Ver detalle');
       return `<div class="item-card" style="border-left-color:var(--amarillo)">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-          <strong>Remisión #${esc(r.numero)}</strong><span class="badge badge-pend">⏳ Pendiente</span>
+          <strong>Remisión #${esc(it.numero)}</strong><span class="badge badge-pend">⏳ Pendiente</span>
         </div>
-        <p style="font-size:14px;margin:6px 0">🏢 ${esc(r.clientName)} · 📦 ${nProd} producto(s) · ${money(r.precioTotal)}</p>
-        <button class="btn btn-sm" onclick="openEntregaDetalle('${d.id}')">SELECCIONAR →</button>
+        <p style="font-size:14px;margin:6px 0">🏢 ${esc(it.clientName)} · ${resumen}${it.precioTotal ? ' · ' + money(it.precioTotal) : ''}</p>
+        <button class="btn btn-sm" onclick="openEntregaDetalle('${it.id}')">SELECCIONAR →</button>
       </div>`;
     }).join('');
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
 }
 
 async function openEntregaDetalle(id){
-  try {
-    const doc = await db.collection('remisiones').doc(id).get();
-    if (!doc.exists){ alert('❌ Remisión no encontrada'); return; }
-    const r = doc.data();
-    S.remisionActual = id; S.remisionActualData = r;
-    $('entregaDetalleContent').innerHTML = `
-      <h2 style="margin-bottom:10px">📦 Remisión #${esc(r.numero)}</h2>
-      <div class="info-card">
-        <p><strong>Cliente:</strong> ${esc(r.clientName)}</p>
-        ${r.responsable ? `<p><strong>Creada por:</strong> ${esc(r.responsable)}</p>` : ''}
-        ${r.formaPago ? `<p><strong>Forma de pago:</strong> ${esc(r.formaPago)}</p>` : ''}
-        ${r.observaciones ? `<p><strong>Observaciones:</strong> ${esc(r.observaciones)}</p>` : ''}
-        <p><strong>Total:</strong> ${money(r.precioTotal)}</p>
-      </div>
-      <table class="mini"><tr><th>Producto</th><th>Cant.</th><th>V/Unit</th></tr>
-        ${(r.productos || []).map(p => `<tr><td>${esc(p.nombre)}</td><td>${p.cantidad}</td><td>${money(p.precioUnitario)}</td></tr>`).join('')}
-      </table>`;
-    showScreen('scr-entregaDetalle');
-  } catch (e){ alert('❌ Error: ' + e.message); }
+  const it = S.entregaCache[id];
+  if (!it){ alert('❌ Remisión no encontrada — recarga la lista'); return; }
+  S.remisionActual = id; S.remisionActualData = it;
+  const tabla = it.source === 'firebase'
+    ? `<table class="mini"><tr><th>Producto</th><th>Cant.</th><th>V/Unit</th></tr>
+        ${(it.productos || []).map(p => `<tr><td>${esc(p.nombre)}</td><td>${p.cantidad}</td><td>${money(p.precioUnitario)}</td></tr>`).join('')}
+      </table>`
+    : (it.productosTexto ? `<div class="info-card">📦 <strong>Productos:</strong> ${esc(it.productosTexto)}</div>` : '');
+  $('entregaDetalleContent').innerHTML = `
+    <h2 style="margin-bottom:10px">📦 Remisión #${esc(it.numero)}</h2>
+    <div class="info-card">
+      <p><strong>Cliente:</strong> ${esc(it.clientName)}</p>
+      ${it.responsable ? `<p><strong>Creada por:</strong> ${esc(it.responsable)}</p>` : ''}
+      ${it.formaPago ? `<p><strong>Forma de pago:</strong> ${esc(it.formaPago)}</p>` : ''}
+      ${it.observaciones ? `<p><strong>Observaciones:</strong> ${esc(it.observaciones)}</p>` : ''}
+      ${it.precioTotal ? `<p><strong>Total:</strong> ${money(it.precioTotal)}</p>` : ''}
+    </div>
+    ${tabla}`;
+  showScreen('scr-entregaDetalle');
 }
 
 function showEntregarScreen(){
@@ -946,16 +1015,29 @@ async function updateRemisionAirtable(airtableId, fields){
   } catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
 }
 
+async function actualizarEntrega(cambiosFirebase, cambiosAirtable){
+  const it = S.remisionActualData;
+  if (it.source === 'firebase'){
+    await db.collection('remisiones').doc(S.remisionActual).update(cambiosFirebase);
+    if (it.airtableId) await updateRemisionAirtable(it.airtableId, cambiosAirtable);
+  } else {
+    // Remisión que vive en Airtable: actualizar allá y guardar evidencia en el sistema
+    await updateRemisionAirtable(it.airtableId, cambiosAirtable);
+    await db.collection('entregas_evidencia').add({
+      airtableId: it.airtableId, numero: it.numero || '', clientName: it.clientName || '',
+      ...cambiosFirebase, registradoEn: ts()
+    });
+  }
+}
+
 async function saveDelivery(){
   if (!deliveryPhotoData){ alert('⚠️ Debes tomar una foto'); return; }
   const btn = $('saveDeliveryBtn'); btn.disabled = true; btn.textContent = '⏳ Guardando...';
   try {
-    await db.collection('remisiones').doc(S.remisionActual).update({
-      estado: 'Entregado', status: 'delivered', fotoEntrega: deliveryPhotoData, fechaEntrega: ts()
-    });
-    await updateRemisionAirtable(S.remisionActualData.airtableId, {
-      'Estado': 'Entregado', 'Foto de remisión': 'Foto registrada en el sistema', 'Fecha de entrega': new Date().toISOString().split('T')[0]
-    });
+    await actualizarEntrega(
+      { estado: 'Entregado', status: 'delivered', fotoEntrega: deliveryPhotoData, fechaEntrega: ts() },
+      { 'Estado': 'Entregado', 'Foto de remisión': 'Foto registrada en el sistema', 'Fecha de entrega': new Date().toISOString().split('T')[0] }
+    );
     alert('✅ Entrega registrada exitosamente');
     deliveryPhotoData = null;
     showScreen('scr-entregas'); loadPendingRemisiones();
@@ -968,12 +1050,10 @@ async function saveNoDelivery(){
   if (motivo.length < 10){ alert('⚠️ El motivo debe tener al menos 10 caracteres'); return; }
   const btn = $('saveNoDeliveryBtn'); btn.disabled = true; btn.textContent = '⏳ Guardando...';
   try {
-    await db.collection('remisiones').doc(S.remisionActual).update({
-      estado: 'No entregado', status: 'not_delivered', motivoNoEntrega: motivo, fechaEntrega: ts()
-    });
-    await updateRemisionAirtable(S.remisionActualData.airtableId, {
-      'Estado': 'No entregado', 'Motivo de no entrega': motivo, 'Fecha de entrega': new Date().toISOString().split('T')[0]
-    });
+    await actualizarEntrega(
+      { estado: 'No entregado', status: 'not_delivered', motivoNoEntrega: motivo, fechaEntrega: ts() },
+      { 'Estado': 'No entregado', 'Motivo de no entrega': motivo, 'Fecha de entrega': new Date().toISOString().split('T')[0] }
+    );
     alert('✅ No entrega registrada');
     showScreen('scr-entregas'); loadPendingRemisiones();
   } catch (e){ alert('❌ Error al guardar: ' + e.message); }
@@ -983,8 +1063,7 @@ async function saveNoDelivery(){
 async function devolverRemision(){
   if (!confirm('¿Devolver esta remisión a estado Pendiente?')) return;
   try {
-    await db.collection('remisiones').doc(S.remisionActual).update({ estado: 'Pendiente', status: 'pending' });
-    await updateRemisionAirtable(S.remisionActualData.airtableId, { 'Estado': 'Pendiente' });
+    await actualizarEntrega({ estado: 'Pendiente', status: 'pending' }, { 'Estado': 'Pendiente' });
     alert('↩️ Remisión devuelta a Pendiente');
     showScreen('scr-entregas'); loadPendingRemisiones();
   } catch (e){ alert('❌ Error: ' + e.message); }
