@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.11.0 - Eliminar reportes y sincronizacion de remisiones borradas en Airtable
+     VERSION: 8.12.0 - Secuencia sincronizada con Airtable y seccion Entregas Realizadas con informacion completa
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -333,10 +333,10 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
         <div id="remisionesList" class="loading">Cargando...</div>
       </div>
       <div class="card">
-        <h2 style="margin-bottom:12px">📸 Evidencias de Entrega
+        <h2 style="margin-bottom:12px">🚚 Entregas Realizadas
           <button class="btn btn-sm btn-outline" style="float:right" onclick="loadEvidencias()">🔄 Actualizar</button>
         </h2>
-        <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Fotos y registros de las entregas hechas por los empleados.</p></div>
+        <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Remisiones ya entregadas o no entregadas, con su información y la foto de evidencia.</p></div>
       </div>
     </div>
 
@@ -850,7 +850,7 @@ function switchAdminTab(tab){
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
-  if (tab === 'remisiones'){ ensureBaseData().then(() => { loadNextRemisionNumber(); loadCreatedRemisiones(); loadEvidencias(); }); }
+  if (tab === 'remisiones'){ ensureBaseData().then(async () => { await loadCreatedRemisiones(); loadNextRemisionNumber(); loadEvidencias(); }); }
   if (tab === 'clientes') loadClientesTab();
   if (tab === 'productos') loadNuestrosProductos();
 }
@@ -1928,29 +1928,83 @@ async function loadCreatedRemisiones(){
 
 async function loadEvidencias(){
   const box = $('evidenciasList');
-  box.innerHTML = '<div class="loading">Cargando evidencias...</div>';
+  box.innerHTML = '<div class="loading">Cargando entregas realizadas...</div>';
   try {
+    await ensureBaseData();
     const items = [];
+    const cols = await columnasRemisiones();
+
+    // 1. Fotos y motivos guardados en el sistema, indexados por remisión de Airtable
+    const evidencias = {};
     const ev = await db.collection('entregas_evidencia').get();
-    ev.docs.forEach(d => { const r = d.data(); items.push({ ...r, fecha: r.registradoEn || r.fechaEntrega }); });
+    ev.docs.forEach(d => {
+      const r = d.data();
+      if (r.airtableId) evidencias[r.airtableId] = { docId: d.id, foto: r.fotoEntrega, motivo: r.motivoNoEntrega, fecha: r.registradoEn };
+    });
+
+    // 2. Remisiones de AIRTABLE ya entregadas o no entregadas (la fuente de verdad)
+    if (cols.estado){
+      const formula = `OR({${cols.estado}}='Entregado',{${cols.estado}}='No entregado')`;
+      const records = await atAll('remisiones', `filterByFormula=${encodeURIComponent(formula)}`);
+      const idsValidos = new Set(records.map(r => r.id));
+      // Limpiar evidencias huérfanas (su remisión ya no existe con esos estados)
+      for (const [atId, e] of Object.entries(evidencias)){
+        if (!idsValidos.has(atId)){
+          try { await db.collection('entregas_evidencia').doc(e.docId).delete(); } catch (err){}
+          delete evidencias[atId];
+        }
+      }
+      records.forEach(rec => {
+        const f = rec.fields;
+        let clientName = '—';
+        const cli = cols.cliente ? f[cols.cliente] : null;
+        if (Array.isArray(cli) && cli.length) clientName = S.clientes[cli[0]]?.name || 'Cliente';
+        else if (typeof cli === 'string') clientName = cli;
+        const e = evidencias[rec.id] || {};
+        items.push({
+          numero: cols.codigo ? f[cols.codigo] : '—',
+          clientName,
+          estado: f[cols.estado],
+          productosTexto: cols.productos ? (f[cols.productos] || '') : '',
+          precio: cols.precio ? parsePrecio(f[cols.precio]) : 0,
+          fechaTxt: cols.fechaEntrega ? (f[cols.fechaEntrega] || '') : '',
+          motivo: (cols.motivoNoEntrega ? f[cols.motivoNoEntrega] : '') || e.motivo || '',
+          foto: e.foto || null,
+          orden: e.fecha?.seconds || 0
+        });
+      });
+    }
+
+    // 3. Remisiones del sistema entregadas que no estén en Airtable
     const rem = await db.collection('remisiones').get();
     rem.docs.forEach(d => {
       const r = d.data();
-      if (r.fotoEntrega || r.motivoNoEntrega) items.push({ numero: r.numero, clientName: r.clientName, estado: r.estado, fotoEntrega: r.fotoEntrega, motivoNoEntrega: r.motivoNoEntrega, fecha: r.fechaEntrega });
+      if (r.estado !== 'Entregado' && r.estado !== 'No entregado') return;
+      if (r.airtableId) return; // ya cubierta por Airtable
+      items.push({
+        numero: r.numero, clientName: r.clientName, estado: r.estado,
+        productosTexto: (r.productos || []).map(p => `${p.cantidad} ${p.nombre}`).join(', '),
+        precio: r.precioTotal || 0,
+        fechaTxt: r.fechaEntrega?.toDate ? r.fechaEntrega.toDate().toLocaleDateString('es-CO') : '',
+        motivo: r.motivoNoEntrega || '', foto: r.fotoEntrega || null,
+        orden: r.fechaEntrega?.seconds || 0
+      });
     });
-    items.sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
-    if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin evidencias registradas todavía</p>'; return; }
+
+    items.sort((a, b) => b.orden - a.orden || (parseInt(b.numero) || 0) - (parseInt(a.numero) || 0));
+    if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Aún no hay entregas registradas</p>'; return; }
     box.innerHTML = items.slice(0, 30).map(it => {
-      const f = it.fecha?.toDate ? it.fecha.toDate().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-      const badge = it.estado === 'Entregado' ? 'badge-ok' : it.estado === 'No entregado' ? 'badge-no' : 'badge-pend';
-      return `<div class="item-card">
+      const badge = it.estado === 'Entregado' ? 'badge-ok' : 'badge-no';
+      return `<div class="item-card" style="border-left-color:${it.estado === 'Entregado' ? 'var(--verde)' : 'var(--rojo)'}">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
           <strong>📦 Remisión #${esc(it.numero)} · ${esc(it.clientName)}</strong>
-          <span class="badge ${badge}">${esc(it.estado || '')}</span>
+          <span class="badge ${badge}">${it.estado === 'Entregado' ? '✅' : '❌'} ${esc(it.estado)}</span>
         </div>
-        <p style="font-size:13px;color:var(--gris);margin:4px 0">${f}</p>
-        ${it.motivoNoEntrega ? `<p style="font-size:13px;color:var(--rojo)">Motivo: ${esc(it.motivoNoEntrega)}</p>` : ''}
-        ${it.fotoEntrega ? `<img src="${it.fotoEntrega}" style="max-width:170px;border-radius:9px;cursor:pointer;margin-top:4px" onclick="openOverlay('<img src=&quot;' + this.src + '&quot; style=&quot;max-width:100%;border-radius:10px&quot;>')">` : ''}
+        ${it.fechaTxt ? `<p style="font-size:13px;color:var(--gris);margin:4px 0">📅 ${esc(it.fechaTxt)}</p>` : ''}
+        ${it.productosTexto ? `<p style="font-size:13px;margin:4px 0">📦 ${esc(String(it.productosTexto).slice(0, 90))}${String(it.productosTexto).length > 90 ? '…' : ''}</p>` : ''}
+        ${it.precio ? `<p style="font-size:13px;margin:4px 0"><strong>${money(it.precio)}</strong></p>` : ''}
+        ${it.motivo ? `<p style="font-size:13px;color:var(--rojo);margin:4px 0">Motivo: ${esc(it.motivo)}</p>` : ''}
+        ${it.foto ? `<img src="${it.foto}" style="max-width:170px;border-radius:9px;cursor:pointer;margin-top:6px" onclick="openOverlay('<img src=&quot;' + this.src + '&quot; style=&quot;max-width:100%;border-radius:10px&quot;>')">` : ''}
       </div>`;
     }).join('');
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
@@ -1985,9 +2039,15 @@ async function deleteRemision(firebaseId, airtableId){
     if (airtableId){
       try { await atFetch('remisiones', `/${airtableId}`, { method: 'DELETE' }); }
       catch (e){ console.error('No se pudo borrar en Airtable:', e.message); }
+      // Borrar también las evidencias de entrega de esa remisión
+      try {
+        const ev = await db.collection('entregas_evidencia').where('airtableId', '==', airtableId).get();
+        await Promise.all(ev.docs.map(d => d.ref.delete()));
+      } catch (e){ console.warn('Evidencias no limpiadas:', e.message); }
     }
     flash('adminMsg', '🗑️ Remisión eliminada');
-    loadCreatedRemisiones();
+    await loadCreatedRemisiones();
+    loadNextRemisionNumber();
   } catch (e){ alert('❌ Error: ' + e.message); }
 }
 
