@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.8.0 - Informacion de Entrega lee las remisiones pendientes directamente de Airtable
+     VERSION: 8.8.1 - Estado de entrega actualiza la columna real de Airtable + visor de evidencias fotograficas
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -327,6 +327,12 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <div class="card">
         <h2 style="margin-bottom:12px">🗂️ Remisiones Creadas</h2>
         <div id="remisionesList" class="loading">Cargando...</div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">📸 Evidencias de Entrega
+          <button class="btn btn-sm btn-outline" style="float:right" onclick="loadEvidencias()">🔄 Actualizar</button>
+        </h2>
+        <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Fotos y registros de las entregas hechas por los empleados.</p></div>
       </div>
     </div>
 
@@ -840,7 +846,7 @@ function switchAdminTab(tab){
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
-  if (tab === 'remisiones'){ ensureBaseData().then(() => { loadNextRemisionNumber(); loadCreatedRemisiones(); }); }
+  if (tab === 'remisiones'){ ensureBaseData().then(() => { loadNextRemisionNumber(); loadCreatedRemisiones(); loadEvidencias(); }); }
   if (tab === 'clientes') loadClientesTab();
   if (tab === 'productos') loadNuestrosProductos();
 }
@@ -875,7 +881,8 @@ async function columnasRemisiones(){
     productos: b(/productos/), precio: b(/precio|valor.*venta/),
     responsable: b(/responsable.*(remision|creacion)|elaborad|creador/),
     respEntrega: b(/responsable.*entrega/), formaPago: b(/forma.*pago|pago/),
-    observaciones: b(/observa/), motivoNoEntrega: b(/motivo/), fechaEntrega: b(/fecha.*entrega/)
+    observaciones: b(/observa/), motivoNoEntrega: b(/motivo/), fechaEntrega: b(/fecha.*entrega/),
+    foto: campos.find(f => /foto/.test(normalizar(f.name)))
   };
   return S._colsRem;
 }
@@ -1015,14 +1022,29 @@ async function updateRemisionAirtable(airtableId, fields){
   } catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
 }
 
-async function actualizarEntrega(cambiosFirebase, cambiosAirtable){
+// Actualiza la entrega en la fuente correcta, emparejando con las columnas REALES de Airtable
+async function actualizarEntrega(cambiosFirebase, semantico){
   const it = S.remisionActualData;
+  // Construir los campos de Airtable con los nombres reales de tus columnas
+  let fieldsAT = {};
+  try {
+    const cols = await columnasRemisiones();
+    if (semantico.estado && cols.estado) fieldsAT[cols.estado] = semantico.estado;
+    if (semantico.motivo && cols.motivoNoEntrega) fieldsAT[cols.motivoNoEntrega] = semantico.motivo;
+    if (semantico.fechaEntrega && cols.fechaEntrega) fieldsAT[cols.fechaEntrega] = semantico.fechaEntrega;
+    if (semantico.notaFoto && cols.foto && !/attachment/i.test(cols.foto.type)) fieldsAT[cols.foto.name] = semantico.notaFoto;
+  } catch (e){ console.warn('Columnas de Airtable no disponibles:', e.message); }
+
+  const patchAirtable = async (airtableId) => {
+    if (!airtableId || !Object.keys(fieldsAT).length) return;
+    await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields: fieldsAT, typecast: true }) });
+  };
+
   if (it.source === 'firebase'){
     await db.collection('remisiones').doc(S.remisionActual).update(cambiosFirebase);
-    if (it.airtableId) await updateRemisionAirtable(it.airtableId, cambiosAirtable);
+    try { await patchAirtable(it.airtableId); } catch (e){ console.error('Airtable no actualizado:', e.message); }
   } else {
-    // Remisión que vive en Airtable: actualizar allá y guardar evidencia en el sistema
-    await updateRemisionAirtable(it.airtableId, cambiosAirtable);
+    await patchAirtable(it.airtableId); // si falla aquí, sí queremos ver el error
     await db.collection('entregas_evidencia').add({
       airtableId: it.airtableId, numero: it.numero || '', clientName: it.clientName || '',
       ...cambiosFirebase, registradoEn: ts()
@@ -1036,7 +1058,7 @@ async function saveDelivery(){
   try {
     await actualizarEntrega(
       { estado: 'Entregado', status: 'delivered', fotoEntrega: deliveryPhotoData, fechaEntrega: ts() },
-      { 'Estado': 'Entregado', 'Foto de remisión': 'Foto registrada en el sistema', 'Fecha de entrega': new Date().toISOString().split('T')[0] }
+      { estado: 'Entregado', notaFoto: '📷 Foto de entrega guardada en el sistema (ver Evidencias en la app)', fechaEntrega: new Date().toISOString().split('T')[0] }
     );
     alert('✅ Entrega registrada exitosamente');
     deliveryPhotoData = null;
@@ -1052,7 +1074,7 @@ async function saveNoDelivery(){
   try {
     await actualizarEntrega(
       { estado: 'No entregado', status: 'not_delivered', motivoNoEntrega: motivo, fechaEntrega: ts() },
-      { 'Estado': 'No entregado', 'Motivo de no entrega': motivo, 'Fecha de entrega': new Date().toISOString().split('T')[0] }
+      { estado: 'No entregado', motivo: motivo, fechaEntrega: new Date().toISOString().split('T')[0] }
     );
     alert('✅ No entrega registrada');
     showScreen('scr-entregas'); loadPendingRemisiones();
@@ -1063,7 +1085,7 @@ async function saveNoDelivery(){
 async function devolverRemision(){
   if (!confirm('¿Devolver esta remisión a estado Pendiente?')) return;
   try {
-    await actualizarEntrega({ estado: 'Pendiente', status: 'pending' }, { 'Estado': 'Pendiente' });
+    await actualizarEntrega({ estado: 'Pendiente', status: 'pending' }, { estado: 'Pendiente' });
     alert('↩️ Remisión devuelta a Pendiente');
     showScreen('scr-entregas'); loadPendingRemisiones();
   } catch (e){ alert('❌ Error: ' + e.message); }
@@ -1850,6 +1872,36 @@ async function loadCreatedRemisiones(){
           <button class="btn btn-sm" onclick="generateRemisionPDF('${d.id}')">📄 PDF</button>
           <button class="btn btn-sm btn-rojo" onclick="deleteRemision('${d.id}','${r.airtableId || ''}')">🗑️</button>
         </div>
+      </div>`;
+    }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function loadEvidencias(){
+  const box = $('evidenciasList');
+  box.innerHTML = '<div class="loading">Cargando evidencias...</div>';
+  try {
+    const items = [];
+    const ev = await db.collection('entregas_evidencia').get();
+    ev.docs.forEach(d => { const r = d.data(); items.push({ ...r, fecha: r.registradoEn || r.fechaEntrega }); });
+    const rem = await db.collection('remisiones').get();
+    rem.docs.forEach(d => {
+      const r = d.data();
+      if (r.fotoEntrega || r.motivoNoEntrega) items.push({ numero: r.numero, clientName: r.clientName, estado: r.estado, fotoEntrega: r.fotoEntrega, motivoNoEntrega: r.motivoNoEntrega, fecha: r.fechaEntrega });
+    });
+    items.sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0));
+    if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin evidencias registradas todavía</p>'; return; }
+    box.innerHTML = items.slice(0, 30).map(it => {
+      const f = it.fecha?.toDate ? it.fecha.toDate().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+      const badge = it.estado === 'Entregado' ? 'badge-ok' : it.estado === 'No entregado' ? 'badge-no' : 'badge-pend';
+      return `<div class="item-card">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <strong>📦 Remisión #${esc(it.numero)} · ${esc(it.clientName)}</strong>
+          <span class="badge ${badge}">${esc(it.estado || '')}</span>
+        </div>
+        <p style="font-size:13px;color:var(--gris);margin:4px 0">${f}</p>
+        ${it.motivoNoEntrega ? `<p style="font-size:13px;color:var(--rojo)">Motivo: ${esc(it.motivoNoEntrega)}</p>` : ''}
+        ${it.fotoEntrega ? `<img src="${it.fotoEntrega}" style="max-width:170px;border-radius:9px;cursor:pointer;margin-top:4px" onclick="openOverlay('<img src=&quot;' + this.src + '&quot; style=&quot;max-width:100%;border-radius:10px&quot;>')">` : ''}
       </div>`;
     }).join('');
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
