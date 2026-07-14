@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.12.0 - Secuencia sincronizada con Airtable y seccion Entregas Realizadas con informacion completa
+     VERSION: 8.12.1 - Remisiones entregadas pasan de Creadas a Entregas Realizadas con boton Ver imagen
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1904,8 +1904,12 @@ async function loadCreatedRemisiones(){
         }
       }
     } catch (e){ console.warn('Sin sincronización de borrados:', e.message); }
-    if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin remisiones creadas</p>'; return; }
-    const docs = snap.docs.sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 30);
+    if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin remisiones pendientes</p>'; return; }
+    // Solo las pendientes: las entregadas/no entregadas pasan a "Entregas Realizadas"
+    const docs = snap.docs
+      .filter(d => (d.data().estado || 'Pendiente') === 'Pendiente')
+      .sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 30);
+    if (!docs.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin remisiones pendientes — las entregadas están abajo en 🚚 Entregas Realizadas</p>'; return; }
     box.innerHTML = docs.map(d => {
       const r = d.data();
       const badge = r.estado === 'Entregado' ? 'badge-ok' : r.estado === 'No entregado' ? 'badge-no' : 'badge-pend';
@@ -1914,8 +1918,6 @@ async function loadCreatedRemisiones(){
           <strong>#${esc(r.numero)} · ${esc(r.clientName)}</strong><span class="badge ${badge}">${esc(r.estado)}</span>
         </div>
         <p style="font-size:13px;color:var(--gris);margin:6px 0">${(r.productos || []).length} producto(s) · ${money(r.precioTotal)}</p>
-        ${r.motivoNoEntrega ? `<p style="font-size:13px;color:var(--rojo)">Motivo: ${esc(r.motivoNoEntrega)}</p>` : ''}
-        ${r.fotoEntrega ? `<img src="${r.fotoEntrega}" style="max-width:110px;border-radius:8px;margin:4px 0">` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm btn-azul" onclick="viewRemisionDetails('${d.id}')">👁️ Ver</button>
           <button class="btn btn-sm" onclick="generateRemisionPDF('${d.id}')">📄 PDF</button>
@@ -2004,10 +2006,15 @@ async function loadEvidencias(){
         ${it.productosTexto ? `<p style="font-size:13px;margin:4px 0">📦 ${esc(String(it.productosTexto).slice(0, 90))}${String(it.productosTexto).length > 90 ? '…' : ''}</p>` : ''}
         ${it.precio ? `<p style="font-size:13px;margin:4px 0"><strong>${money(it.precio)}</strong></p>` : ''}
         ${it.motivo ? `<p style="font-size:13px;color:var(--rojo);margin:4px 0">Motivo: ${esc(it.motivo)}</p>` : ''}
-        ${it.foto ? `<img src="${it.foto}" style="max-width:170px;border-radius:9px;cursor:pointer;margin-top:6px" onclick="openOverlay('<img src=&quot;' + this.src + '&quot; style=&quot;max-width:100%;border-radius:10px&quot;>')">` : ''}
+        ${it.foto ? `<button class="btn btn-sm btn-azul" style="margin-top:6px" onclick="verFotoEntrega(this)" data-foto="${it.foto}">📷 Ver imagen</button>` : ''}
       </div>`;
     }).join('');
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+function verFotoEntrega(btn){
+  openOverlay(`<img src="${btn.dataset.foto}" style="max-width:100%;border-radius:10px">
+    <button class="btn btn-gris btn-block" style="margin-top:12px" onclick="closeOverlay()">Cerrar</button>`);
 }
 
 async function viewRemisionDetails(id){
