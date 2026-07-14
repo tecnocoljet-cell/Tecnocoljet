@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.9.0 - Correo de envio del reporte: autollenado con el cliente, editable por empleado y administrador
+     VERSION: 8.10.0 - Al aprobar reporte o crear remision: PDF descargado y dialogo de impresion automatico
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1435,7 +1435,7 @@ function closeOverlay(){ const ov = $('dynOverlay'); if (ov) ov.remove(); }
 async function approveReport(reportId, clientName){
   if (!confirm('¿Aprobar este reporte y generar el PDF?')) return;
   try {
-    const pdfName = await generateReportPDF(reportId);
+    const pdfName = await generateReportPDF(reportId, true); // descarga + abre impresión
     await db.collection('reports').doc(reportId).update({
       status: 'approved', approvedAt: ts(), pdfGenerated: true, pdfFileName: pdfName
     });
@@ -1457,7 +1457,7 @@ async function rejectReport(reportId){
 /* ============================================================
    10. PDF DEL REPORTE (diseño profesional con tarjetas por equipo)
    ============================================================ */
-async function generateReportPDF(reportId){
+async function generateReportPDF(reportId, imprimir = false){
   const doc = await db.collection('reports').doc(reportId).get();
   if (!doc.exists) throw new Error('Reporte no encontrado');
   const r = doc.data();
@@ -1669,6 +1669,7 @@ async function generateReportPDF(reportId){
   const d = r.createdAt ? r.createdAt.toDate() : new Date();
   const fileName = `Reporte_${(r.clientName || 'Cliente').replace(/\s+/g, '_')}_${d.getDate()}-${d.getMonth() + 1}-${d.getFullYear()}.pdf`;
   pdf.save(fileName);
+  if (imprimir) imprimirPDF(pdf);
   return fileName;
 }
 
@@ -1857,7 +1858,7 @@ async function createRemision(){
       alert('⚠️ La remisión se guardó en el sistema pero NO en Airtable: ' + e.message);
     }
     flash('adminMsg', `✅ Remisión #${numero} creada`);
-    await generateRemisionPDF(docRef.id);
+    await generateRemisionPDF(docRef.id, true); // descarga + abre impresión
     // Limpiar
     S.remCliente = null; S.remProductos = []; S.remPrecios = null;
     $('remClienteSel').innerHTML = ''; $('remCreador').value = ''; $('remRespEntrega').value = '';
@@ -1965,7 +1966,23 @@ async function deleteRemision(firebaseId, airtableId){
 /* ============================================================
    12. PDF DE REMISIÓN (formato TECNOCOLJET mejorado)
    ============================================================ */
-async function generateRemisionPDF(remisionId){
+// Abre el diálogo de impresión del PDF recién generado (sin ventanas emergentes)
+function imprimirPDF(pdf){
+  try {
+    const url = pdf.output('bloburl');
+    let fr = document.getElementById('printFrame');
+    if (!fr){
+      fr = document.createElement('iframe');
+      fr.id = 'printFrame';
+      fr.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
+      document.body.appendChild(fr);
+    }
+    fr.onload = () => { setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e){ console.warn('Impresión no disponible:', e.message); } }, 400); };
+    fr.src = url;
+  } catch (e){ console.warn('No se pudo abrir la impresión:', e.message); }
+}
+
+async function generateRemisionPDF(remisionId, imprimir = false){
   try {
     const doc = await db.collection('remisiones').doc(remisionId).get();
     if (!doc.exists){ alert('❌ Remisión no encontrada'); return; }
@@ -2119,6 +2136,7 @@ async function generateRemisionPDF(remisionId){
 
     const filename = `REMISION_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.pdf`;
     pdf.save(filename);
+    if (imprimir) imprimirPDF(pdf);
     return filename;
   } catch (e){ alert('❌ Error generando PDF: ' + e.message); }
 }
