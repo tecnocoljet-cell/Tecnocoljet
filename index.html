@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.8.1 - Estado de entrega actualiza la columna real de Airtable + visor de evidencias fotograficas
+     VERSION: 8.8.2 - Firma y sello mas pequenos en el PDF del reporte
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -1624,11 +1624,11 @@ async function generateReportPDF(reportId){
 
   // ===== Firmas =====
   // El sello sube ~33 pt sobre la línea: reservar ese espacio para no chocar con lo anterior
-  if (y + 78 > 288){ pdf.addPage(); header(); }
-  const yf = Math.max(y + 40, 240);
-  if (r.receptorFirma){ try { pdf.addImage(r.receptorFirma, 'PNG', 118, yf - 26, 68, 24); } catch (e){} }
+  if (y + 66 > 288){ pdf.addPage(); header(); }
+  const yf = Math.max(y + 32, 244);
+  if (r.receptorFirma){ try { pdf.addImage(r.receptorFirma, 'PNG', 128, yf - 20, 52, 18); } catch (e){} }
   // Sello oficial TECNOCOLJET sobre el lado del técnico (proporción 420x166)
-  try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 28, yf - 33, 52, 29); } catch (e){}
+  try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 34, yf - 25, 40, 22.3); } catch (e){}
   pdf.setDrawColor(100); pdf.setLineWidth(0.4);
   pdf.line(20, yf, 90, yf); pdf.line(118, yf, 190, yf);
   pdf.setTextColor(40); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
