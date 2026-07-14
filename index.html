@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.8.2 - Firma y sello mas pequenos en el PDF del reporte
+     VERSION: 8.9.0 - Correo de envio del reporte: autollenado con el cliente, editable por empleado y administrador
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -182,6 +182,10 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
         <div id="repClienteResultados"></div>
       </div>
       <div id="reportClientInfo"></div>
+      <div class="form-group">
+        <label>📧 Correo para envío del reporte</label>
+        <input type="email" id="reportEmail" placeholder="Se llena solo al elegir el cliente — puedes cambiarlo">
+      </div>
       <div class="form-group">
         <label>🛠️ Tipo de Servicio *</label>
         <select id="serviceType">
@@ -1100,7 +1104,7 @@ async function initReportera(){
   $('equipmentSection').style.display = 'none';
   $('reportFooterSection').style.display = 'none';
   $('equipmentWorkForm').classList.add('hidden');
-  $('repClienteBuscar').value = ''; $('repClienteResultados').innerHTML = ''; $('reportClientInfo').innerHTML = '';
+  $('repClienteBuscar').value = ''; $('repClienteResultados').innerHTML = ''; $('reportClientInfo').innerHTML = ''; $('reportEmail').value = '';
   initSignatureCanvas();
   $('repClienteBuscar').placeholder = '⏳ Cargando clientes...';
   try {
@@ -1125,6 +1129,7 @@ async function selectRepCliente(id){
   S.repClienteId = id;
   $('repClienteBuscar').value = c.name;
   $('repClienteResultados').innerHTML = '';
+  $('reportEmail').value = c.email || '';
   $('reportClientInfo').innerHTML = `<div class="info-card">
     <p><strong>🏢 ${esc(c.razonSocial)}</strong></p>
     <p>NIT: ${esc(c.documento) || '—'} · ${esc(c.ciudad) || '—'}</p>
@@ -1305,7 +1310,7 @@ async function submitReport(){
   const report = {
     technician: tecnico,
     clientId, clientName: c.name || c.razonSocial || 'Sin nombre',
-    clientEmail: c.email || '', clientContact: c.telefono || '',
+    clientEmail: $('reportEmail').value.trim() || c.email || '', clientContact: c.telefono || '',
     clientDocument: c.documento || '', clientCity: c.ciudad || '', clientAddress: c.direccion || '',
     equipments: S.reportEquipments.map((e, i) => ({
       equipmentId: e.equipment.id || '',
@@ -1329,7 +1334,7 @@ async function submitReport(){
     await db.collection('reports').add(report);
     alert('✅ Reporte enviado exitosamente para aprobación del administrador');
     // Reset
-    $('technicianName').value = ''; S.repClienteId = null; $('repClienteBuscar').value = ''; $('reportClientInfo').innerHTML = '';
+    $('technicianName').value = ''; S.repClienteId = null; $('repClienteBuscar').value = ''; $('reportClientInfo').innerHTML = ''; $('reportEmail').value = '';
     $('horaEntrada').value = ''; $('horaSalida').value = ''; $('horasTrabajadas').value = '';
     $('observaciones').value = ''; $('receptorNombre').value = ''; $('receptorCargo').value = '';
     clearSignature(); S.reportEquipments = []; renderAddedEquipments();
@@ -1391,7 +1396,12 @@ async function viewReportDetails(reportId){
       <p><strong>Cliente:</strong> ${esc(r.clientName)}</p>
       <p><strong>Técnico:</strong> ${esc(r.technician)}</p>
       <p><strong>Servicio:</strong> ${esc(r.serviceType || '')} · ⏱️ ${esc(r.horaEntrada || '')} → ${esc(r.horaSalida || '')} (${esc(r.tiempoServicio || '')})</p>
-      <p style="margin-bottom:12px"><strong>Recibe:</strong> ${esc(r.receptorNombre || '—')} (${esc(r.receptorCargo || '—')})</p>
+      <p><strong>Recibe:</strong> ${esc(r.receptorNombre || '—')} (${esc(r.receptorCargo || '—')})</p>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0 12px;background:#f0f9ff;border-radius:9px;padding:9px;border-left:3px solid var(--azul)">
+        <span style="font-size:14px">📧</span>
+        <input type="email" id="editReportEmail" value="${esc(r.clientEmail || '')}" placeholder="Correo para envío del reporte" style="flex:1;padding:8px;border:2px solid #dbeafe;border-radius:8px;font-size:14px">
+        <button class="btn btn-sm btn-azul" onclick="saveReportEmail('${reportId}')">💾</button>
+      </div>
       ${equiposHtml}
       ${r.observaciones ? `<p style="margin-top:8px"><strong>Observaciones generales:</strong> ${esc(r.observaciones)}</p>` : ''}
       ${r.receptorFirma ? `<p style="margin-top:10px"><strong>Firma de quien recibe:</strong></p><img src="${r.receptorFirma}" style="max-width:230px;border:1px solid #eee;border-radius:8px">` : ''}
@@ -1399,6 +1409,16 @@ async function viewReportDetails(reportId){
         <button class="btn" style="flex:1" onclick="generateReportPDF('${reportId}')">📄 Descargar PDF</button>
         <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cerrar</button>
       </div>`);
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function saveReportEmail(reportId){
+  const email = $('editReportEmail').value.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert('⚠️ El correo no parece válido'); return; }
+  try {
+    await db.collection('reports').doc(reportId).update({ clientEmail: email });
+    flash('adminMsg', '✅ Correo del reporte actualizado');
+    closeOverlay();
   } catch (e){ alert('❌ Error: ' + e.message); }
 }
 
