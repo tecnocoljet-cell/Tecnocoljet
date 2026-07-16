@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 9.3.0 - Nueva area Ventas (remisiones, cuentas, cotizaciones); administrador solo con reportes y clientes
+     VERSION: 9.3.1 - Inventario con selector de categoria (insumos, repuestos, servicios)
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -132,7 +132,16 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
         <button class="btn btn-sm btn-outline" style="float:right" onclick="loadInventario()">🔄 Actualizar</button>
       </h2>
       <p style="font-size:13px;color:var(--gris);margin-bottom:10px">Entradas manuales · Salidas automáticas con cada remisión o cuenta de cobro</p>
-      <div class="form-group"><input type="text" id="invBuscar" placeholder="🔍 Buscar en el inventario..." oninput="renderInventario()"></div>
+      <div class="grid2" style="grid-template-columns:150px 1fr;gap:8px">
+        <div class="form-group">
+          <select id="invCategoria" onchange="renderInventario()">
+            <option value="insumos">🧪 Insumos</option>
+            <option value="repuestos">🔩 Repuestos</option>
+            <option value="servicios">🛠️ Servicios</option>
+          </select>
+        </div>
+        <div class="form-group"><input type="text" id="invBuscar" placeholder="🔍 Buscar en el inventario..." oninput="renderInventario()"></div>
+      </div>
       <div id="inventarioList" class="loading">Cargando inventario...</div>
       <h3 style="margin:18px 0 8px;color:var(--verde-oscuro)">📜 Últimos movimientos</h3>
       <div id="movimientosList"></div>
@@ -3121,12 +3130,12 @@ function stockDe(productoId){
 function renderInventario(){
   const box = $('inventarioList');
   const filtro = ($('invBuscar').value || '').trim();
-  // Solo insumos y repuestos llevan inventario físico
-  let items = S.productos.filter(p => p.categoria === 'insumos' || p.categoria === 'repuestos');
+  const categoria = $('invCategoria').value; // 🧪/🔩/🛠️ según lo que escoja el encargado
+  let items = S.productos.filter(p => p.categoria === categoria);
   if (filtro) items = buscarParecidos(filtro, items, p => `${p.nombre} ${p.codigo}`, 999);
   else items = [...items].sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
-  if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:12px">Sin productos</p>'; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩' };
+  if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:12px">Sin productos en esta categoría</p>'; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
   box.innerHTML = items.map(p => {
     const stock = stockDe(p.id);
     const color = stock > 0 ? 'var(--verde)' : (stock === 0 ? '#9ca3af' : 'var(--rojo)');
