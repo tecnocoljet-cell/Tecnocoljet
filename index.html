@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 9.2.0 - Numeracion 0001 y por tipo IN/RE/SE, documentos por cliente, e inventario con entradas y salidas automaticas
+     VERSION: 9.3.0 - Nueva area Ventas (remisiones, cuentas, cotizaciones); administrador solo con reportes y clientes
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -91,6 +91,7 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <h2 style="margin-bottom:18px;color:var(--verde-oscuro)">¿Quién eres?</h2>
       <button class="btn btn-block" style="margin-bottom:12px;padding:18px" onclick="selectRole('empleado')">🔧 Empleado</button>
       <button class="btn btn-block btn-outline" style="margin-bottom:12px;padding:18px" onclick="selectRole('admin')">👔 Administrador</button>
+      <button class="btn btn-block btn-outline" style="margin-bottom:12px;padding:18px" onclick="selectRole('ventas')">💼 Ventas</button>
       <button class="btn btn-block btn-outline" style="padding:18px" onclick="selectRole('almacen')">🏬 Almacén</button>
     </div>
   </div>
@@ -143,6 +144,166 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
       <div id="nuestrosProductosList" class="loading">Cargando productos de Airtable...</div>
     </div>
+  </div>
+
+  <!-- ================= LOGIN VENTAS ================= -->
+  <div id="scr-ventasLogin" class="hidden">
+    <button class="back-btn" onclick="goHome()">← Volver</button>
+    <div class="card">
+      <h2 style="margin-bottom:14px">💼 Acceso Ventas</h2>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="ventasPassword" placeholder="••••" onkeyup="if(event.key==='Enter')checkVentasPassword()">
+      </div>
+      <p id="ventasPassError" class="msg msg-error hidden">❌ Contraseña incorrecta</p>
+      <button class="btn btn-block" onclick="checkVentasPassword()">Ingresar</button>
+    </div>
+  </div>
+
+  <!-- ================= VENTAS ================= -->
+  <div id="scr-ventas" class="hidden">
+    <button class="back-btn" onclick="goHome()">← Salir de Ventas</button>
+    <div id="ventasMsg"></div>
+    <div class="tabs">
+      <button class="tab active" id="tab-remisiones" onclick="switchVentasTab('remisiones')">📦 Remisiones</button>
+      <button class="tab" id="tab-cuentas" onclick="switchVentasTab('cuentas')">💰 Ctas. Cobro</button>
+      <button class="tab" id="tab-cotizaciones" onclick="switchVentasTab('cotizaciones')">📋 Cotizaciones</button>
+    </div>
+    <!-- TAB REMISIONES -->
+    <div id="tabc-remisiones" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">📦 Nueva Remisión</h2>
+        <div class="grid2">
+          <div class="form-group"><label>N° de Remisión</label><input type="text" id="remNumero" readonly></div>
+          <div class="form-group"><label>Quién crea la remisión *</label><input type="text" id="remCreador" placeholder="Tu nombre"></div>
+        </div>
+        <div class="form-group">
+          <label>🏢 Cliente *</label>
+          <input type="text" id="remClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterRemClientes()" autocomplete="off">
+          <div id="remClienteResultados"></div>
+          <div id="remClienteSel"></div>
+        </div>
+        <div class="form-group">
+          <label>🛒 Productos <span id="remProdHint" style="color:var(--gris);font-weight:400">(selecciona primero un cliente)</span></label>
+          <input type="text" id="remProdBuscar" placeholder="Buscar producto..." oninput="filterRemProductos()" autocomplete="off" disabled>
+          <div id="remProdResultados"></div>
+        </div>
+        <div id="remProductosTabla"></div>
+        <div class="grid2">
+          <div class="form-group"><label>Responsable de entrega</label><input type="text" id="remRespEntrega" placeholder="Quién entregará"></div>
+          <div class="form-group"><label>Factura electrónica</label><input type="text" id="remFactura" placeholder="Ej: FE-1290"></div>
+        </div>
+        <div class="grid2">
+          <div class="form-group"><label>Forma de pago</label>
+            <select id="remFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
+          </div>
+          <div class="form-group"><label>Observaciones</label><input type="text" id="remObservaciones" placeholder="Notas"></div>
+        </div>
+        <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px">
+          <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+            <input type="checkbox" id="remExentaIva" style="width:19px;height:19px;cursor:pointer" onchange="renderRemProductos()">
+            <span>🚫 Remisión <strong>EXENTA de IVA</strong> (no se cobrará el 19%)</span>
+          </label>
+        </div>
+        <button class="btn btn-block" id="btnCrearRemision" onclick="createRemision()">📦 Crear Remisión (genera PDF)</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Remisiones Creadas</h2>
+        <div id="remisionesList" class="loading">Cargando...</div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🚚 Entregas Realizadas
+          <button class="btn btn-sm btn-outline" style="float:right" onclick="loadEvidencias()">🔄 Actualizar</button>
+        </h2>
+        <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Remisiones ya entregadas o no entregadas, con su información y la foto de evidencia.</p></div>
+      </div>
+    </div>
+
+    <!-- TAB CUENTAS DE COBRO -->
+    <div id="tabc-cuentas" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">💰 Nueva Cuenta de Cobro</h2>
+        <div class="grid2">
+          <div class="form-group"><label>N° de Cuenta</label><input type="text" id="ccNumero" readonly></div>
+          <div class="form-group"><label>Quién la elabora *</label><input type="text" id="ccCreador" placeholder="Tu nombre"></div>
+        </div>
+        <div class="form-group">
+          <label>🏢 Cliente *</label>
+          <input type="text" id="ccClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCcClientes()" autocomplete="off">
+          <div id="ccClienteResultados"></div>
+          <div id="ccClienteSel"></div>
+        </div>
+        <div class="form-group">
+          <label>🛒 Conceptos / Productos <span id="ccProdHint" style="color:var(--gris);font-weight:400">(selecciona primero un cliente)</span></label>
+          <input type="text" id="ccProdBuscar" placeholder="Buscar producto o servicio..." oninput="filterCcProductos()" autocomplete="off" disabled>
+          <div id="ccProdResultados"></div>
+        </div>
+        <div id="ccProductosTabla"></div>
+        <div class="grid2">
+          <div class="form-group"><label>Forma de pago</label>
+            <select id="ccFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
+          </div>
+          <div class="form-group"><label>Observaciones</label><input type="text" id="ccObservaciones" placeholder="Notas o condiciones"></div>
+        </div>
+        <button class="btn btn-block" id="btnCrearCuenta" onclick="createCuentaCobro()">💰 Crear Cuenta de Cobro (genera PDF)</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Cuentas de Cobro Creadas</h2>
+        <div id="cuentasList" class="loading">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- TAB COTIZACIONES -->
+    <div id="tabc-cotizaciones" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">📋 Nueva Cotización</h2>
+        <div class="grid2">
+          <div class="form-group"><label>Tipo de cotización *</label>
+            <select id="cotTipo" onchange="loadNextCotizacionNumber()">
+              <option value="IN">🧪 Insumos (IN)</option>
+              <option value="RE">🔩 Repuestos (RE)</option>
+              <option value="SE">🛠️ Servicios (SE)</option>
+            </select>
+          </div>
+          <div class="form-group"><label>N° de Cotización</label><input type="text" id="cotNumero" readonly></div>
+        </div>
+        <div class="form-group"><label>Elaborada por *</label><input type="text" id="cotFirmante"></div>
+        <div class="grid2">
+          <div class="form-group"><label>Cargo</label><input type="text" id="cotCargo"></div>
+          <div class="form-group"><label>Celular del firmante</label><input type="text" id="cotCel"></div>
+        </div>
+        <div class="form-group">
+          <label>🏢 Cliente *</label>
+          <input type="text" id="cotClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCotClientes()" autocomplete="off">
+          <div id="cotClienteResultados"></div>
+          <div id="cotClienteSel"></div>
+        </div>
+        <div class="form-group"><label>👤 Persona de contacto</label><input type="text" id="cotContacto" placeholder="Nombre de quien recibe la cotización"></div>
+        <div class="form-group"><label>📝 Motivo de la cotización *</label><input type="text" id="cotMotivo" placeholder="Ej: capacitación de personal nuevo"></div>
+        <div class="form-group">
+          <label>🛒 Productos / Servicios <span style="color:var(--gris);font-weight:400">(busca en tu catálogo o agrega manual)</span></label>
+          <input type="text" id="cotProdBuscar" placeholder="Buscar producto..." oninput="filterCotProductos()" autocomplete="off">
+          <div id="cotProdResultados"></div>
+        </div>
+        <div id="cotProductosTabla"></div>
+        <button class="btn btn-sm btn-gris" style="margin-bottom:14px" onclick="addCotItemManual()">➕ Agregar ítem manual</button>
+        <div class="grid2">
+          <div class="form-group"><label>⏳ Validez de la oferta (días)</label><input type="number" id="cotValidez" value="15" min="1"></div>
+          <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px;display:flex;align-items:center">
+            <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+              <input type="checkbox" id="cotSinIva" checked style="width:19px;height:19px;cursor:pointer">
+              <span>Cotización <strong>SIN IVA</strong> incluido</span>
+            </label>
+          </div>
+        </div>
+        <button class="btn btn-block" id="btnCrearCot" onclick="createCotizacion()">📋 Crear Cotización (genera PDF)</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Cotizaciones Creadas</h2>
+        <div id="cotizacionesList" class="loading">Cargando...</div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ================= MENÚ EMPLEADO ================= -->
@@ -314,10 +475,7 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
     <div id="adminMsg"></div>
     <div class="tabs">
       <button class="tab active" id="tab-reportes" onclick="switchAdminTab('reportes')">📋 Reportes</button>
-      <button class="tab" id="tab-remisiones" onclick="switchAdminTab('remisiones')">📦 Remisiones</button>
       <button class="tab" id="tab-clientes" onclick="switchAdminTab('clientes')">👥 Clientes</button>
-      <button class="tab" id="tab-cuentas" onclick="switchAdminTab('cuentas')">💰 Ctas. Cobro</button>
-      <button class="tab" id="tab-cotizaciones" onclick="switchAdminTab('cotizaciones')">📋 Cotizaciones</button>
     </div>
 
     <!-- TAB REPORTES -->
@@ -325,141 +483,6 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <div class="card">
         <h2 style="margin-bottom:12px">📋 Reportes Pendientes de Aprobación</h2>
         <div id="pendingReports" class="loading">Cargando...</div>
-      </div>
-    </div>
-
-    <!-- TAB REMISIONES -->
-    <div id="tabc-remisiones" class="hidden">
-      <div class="card">
-        <h2 style="margin-bottom:12px">📦 Nueva Remisión</h2>
-        <div class="grid2">
-          <div class="form-group"><label>N° de Remisión</label><input type="text" id="remNumero" readonly></div>
-          <div class="form-group"><label>Quién crea la remisión *</label><input type="text" id="remCreador" placeholder="Tu nombre"></div>
-        </div>
-        <div class="form-group">
-          <label>🏢 Cliente *</label>
-          <input type="text" id="remClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterRemClientes()" autocomplete="off">
-          <div id="remClienteResultados"></div>
-          <div id="remClienteSel"></div>
-        </div>
-        <div class="form-group">
-          <label>🛒 Productos <span id="remProdHint" style="color:var(--gris);font-weight:400">(selecciona primero un cliente)</span></label>
-          <input type="text" id="remProdBuscar" placeholder="Buscar producto..." oninput="filterRemProductos()" autocomplete="off" disabled>
-          <div id="remProdResultados"></div>
-        </div>
-        <div id="remProductosTabla"></div>
-        <div class="grid2">
-          <div class="form-group"><label>Responsable de entrega</label><input type="text" id="remRespEntrega" placeholder="Quién entregará"></div>
-          <div class="form-group"><label>Factura electrónica</label><input type="text" id="remFactura" placeholder="Ej: FE-1290"></div>
-        </div>
-        <div class="grid2">
-          <div class="form-group"><label>Forma de pago</label>
-            <select id="remFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
-          </div>
-          <div class="form-group"><label>Observaciones</label><input type="text" id="remObservaciones" placeholder="Notas"></div>
-        </div>
-        <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px">
-          <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
-            <input type="checkbox" id="remExentaIva" style="width:19px;height:19px;cursor:pointer" onchange="renderRemProductos()">
-            <span>🚫 Remisión <strong>EXENTA de IVA</strong> (no se cobrará el 19%)</span>
-          </label>
-        </div>
-        <button class="btn btn-block" id="btnCrearRemision" onclick="createRemision()">📦 Crear Remisión (genera PDF)</button>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:12px">🗂️ Remisiones Creadas</h2>
-        <div id="remisionesList" class="loading">Cargando...</div>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:12px">🚚 Entregas Realizadas
-          <button class="btn btn-sm btn-outline" style="float:right" onclick="loadEvidencias()">🔄 Actualizar</button>
-        </h2>
-        <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Remisiones ya entregadas o no entregadas, con su información y la foto de evidencia.</p></div>
-      </div>
-    </div>
-
-    <!-- TAB CUENTAS DE COBRO -->
-    <div id="tabc-cuentas" class="hidden">
-      <div class="card">
-        <h2 style="margin-bottom:12px">💰 Nueva Cuenta de Cobro</h2>
-        <div class="grid2">
-          <div class="form-group"><label>N° de Cuenta</label><input type="text" id="ccNumero" readonly></div>
-          <div class="form-group"><label>Quién la elabora *</label><input type="text" id="ccCreador" placeholder="Tu nombre"></div>
-        </div>
-        <div class="form-group">
-          <label>🏢 Cliente *</label>
-          <input type="text" id="ccClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCcClientes()" autocomplete="off">
-          <div id="ccClienteResultados"></div>
-          <div id="ccClienteSel"></div>
-        </div>
-        <div class="form-group">
-          <label>🛒 Conceptos / Productos <span id="ccProdHint" style="color:var(--gris);font-weight:400">(selecciona primero un cliente)</span></label>
-          <input type="text" id="ccProdBuscar" placeholder="Buscar producto o servicio..." oninput="filterCcProductos()" autocomplete="off" disabled>
-          <div id="ccProdResultados"></div>
-        </div>
-        <div id="ccProductosTabla"></div>
-        <div class="grid2">
-          <div class="form-group"><label>Forma de pago</label>
-            <select id="ccFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
-          </div>
-          <div class="form-group"><label>Observaciones</label><input type="text" id="ccObservaciones" placeholder="Notas o condiciones"></div>
-        </div>
-        <button class="btn btn-block" id="btnCrearCuenta" onclick="createCuentaCobro()">💰 Crear Cuenta de Cobro (genera PDF)</button>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:12px">🗂️ Cuentas de Cobro Creadas</h2>
-        <div id="cuentasList" class="loading">Cargando...</div>
-      </div>
-    </div>
-
-    <!-- TAB COTIZACIONES -->
-    <div id="tabc-cotizaciones" class="hidden">
-      <div class="card">
-        <h2 style="margin-bottom:12px">📋 Nueva Cotización</h2>
-        <div class="grid2">
-          <div class="form-group"><label>Tipo de cotización *</label>
-            <select id="cotTipo" onchange="loadNextCotizacionNumber()">
-              <option value="IN">🧪 Insumos (IN)</option>
-              <option value="RE">🔩 Repuestos (RE)</option>
-              <option value="SE">🛠️ Servicios (SE)</option>
-            </select>
-          </div>
-          <div class="form-group"><label>N° de Cotización</label><input type="text" id="cotNumero" readonly></div>
-        </div>
-        <div class="form-group"><label>Elaborada por *</label><input type="text" id="cotFirmante"></div>
-        <div class="grid2">
-          <div class="form-group"><label>Cargo</label><input type="text" id="cotCargo"></div>
-          <div class="form-group"><label>Celular del firmante</label><input type="text" id="cotCel"></div>
-        </div>
-        <div class="form-group">
-          <label>🏢 Cliente *</label>
-          <input type="text" id="cotClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCotClientes()" autocomplete="off">
-          <div id="cotClienteResultados"></div>
-          <div id="cotClienteSel"></div>
-        </div>
-        <div class="form-group"><label>👤 Persona de contacto</label><input type="text" id="cotContacto" placeholder="Nombre de quien recibe la cotización"></div>
-        <div class="form-group"><label>📝 Motivo de la cotización *</label><input type="text" id="cotMotivo" placeholder="Ej: capacitación de personal nuevo"></div>
-        <div class="form-group">
-          <label>🛒 Productos / Servicios <span style="color:var(--gris);font-weight:400">(busca en tu catálogo o agrega manual)</span></label>
-          <input type="text" id="cotProdBuscar" placeholder="Buscar producto..." oninput="filterCotProductos()" autocomplete="off">
-          <div id="cotProdResultados"></div>
-        </div>
-        <div id="cotProductosTabla"></div>
-        <button class="btn btn-sm btn-gris" style="margin-bottom:14px" onclick="addCotItemManual()">➕ Agregar ítem manual</button>
-        <div class="grid2">
-          <div class="form-group"><label>⏳ Validez de la oferta (días)</label><input type="number" id="cotValidez" value="15" min="1"></div>
-          <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px;display:flex;align-items:center">
-            <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
-              <input type="checkbox" id="cotSinIva" checked style="width:19px;height:19px;cursor:pointer">
-              <span>Cotización <strong>SIN IVA</strong> incluido</span>
-            </label>
-          </div>
-        </div>
-        <button class="btn btn-block" id="btnCrearCot" onclick="createCotizacion()">📋 Crear Cotización (genera PDF)</button>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:12px">🗂️ Cotizaciones Creadas</h2>
-        <div id="cotizacionesList" class="loading">Cargando...</div>
       </div>
     </div>
 
@@ -506,6 +529,7 @@ const SELLO_TECNOCOL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdYAAAEGCA
 const CONFIG = {
   adminPassword: '420',
   almacenPassword: '420',
+  ventasPassword: '420',
   beneficiario: { nombre: 'JOHN ALEXANDER TORRES ABRIL', cc: "80'155.763 de Bogotá", cel: '311 2224021' },
   contacto: { direccion: 'Calle 38b sur #72k 70', cel: '311 2224021', tel: '+57 (1) 9 28 3175', emails: 'tecnocoljet@hotmail.com / tecnocoljet@gmail.com' },
   comercial: { nombre: 'JULIAN TORRES', cargo: 'Gerente Comercial', cel: '3225127589' },
@@ -634,7 +658,14 @@ function showScreen(id){
 function goHome(){ showScreen('scr-rol'); }
 
 function flash(containerId, text, tipo){
-  const el = $(containerId);
+  let el = $(containerId);
+  // Si el mensaje apunta al admin pero el usuario está en Ventas, mostrarlo allá
+  const scrAdmin = document.getElementById('scr-admin');
+  const scrVentas = document.getElementById('scr-ventas');
+  if (containerId === 'adminMsg' && scrVentas && !scrVentas.classList.contains('hidden') && scrAdmin?.classList.contains('hidden')){
+    el = $('ventasMsg') || el;
+  }
+  if (!el) return;
   el.innerHTML = `<div class="msg ${tipo === 'error' ? 'msg-error' : 'msg-ok'}">${text}</div>`;
   setTimeout(() => { el.innerHTML = ''; }, 5000);
 }
@@ -909,7 +940,30 @@ function precioAcordadoDe(p){
 function selectRole(rol){
   if (rol === 'empleado') showScreen('scr-empMenu');
   else if (rol === 'almacen') showScreen('scr-almacenLogin');
+  else if (rol === 'ventas') showScreen('scr-ventasLogin');
   else showScreen('scr-adminLogin');
+}
+
+function checkVentasPassword(){
+  if ($('ventasPassword').value === CONFIG.ventasPassword){
+    $('ventasPassword').value = '';
+    $('ventasPassError').classList.add('hidden');
+    showScreen('scr-ventas');
+    switchVentasTab('remisiones');
+  } else {
+    $('ventasPassError').classList.remove('hidden');
+    $('ventasPassword').value = '';
+  }
+}
+
+function switchVentasTab(tab){
+  ['remisiones', 'cuentas', 'cotizaciones'].forEach(t => {
+    $('tab-' + t).classList.toggle('active', t === tab);
+    $('tabc-' + t).classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'remisiones'){ ensureBaseData().then(async () => { await loadCreatedRemisiones(); loadNextRemisionNumber(); loadEvidencias(); }); }
+  if (tab === 'cuentas'){ ensureBaseData().then(async () => { await loadCuentasCreadas(); loadNextCuentaNumber(); }); }
+  if (tab === 'cotizaciones'){ ensureBaseData().then(async () => { await loadCotizaciones(); loadNextCotizacionNumber(); }); }
 }
 
 function checkAlmacenPassword(){
@@ -950,15 +1004,12 @@ function ensureBaseData(){
 }
 
 function switchAdminTab(tab){
-  ['reportes', 'remisiones', 'clientes', 'cuentas', 'cotizaciones'].forEach(t => {
+  ['reportes', 'clientes'].forEach(t => {
     $('tab-' + t).classList.toggle('active', t === tab);
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
-  if (tab === 'remisiones'){ ensureBaseData().then(async () => { await loadCreatedRemisiones(); loadNextRemisionNumber(); loadEvidencias(); }); }
   if (tab === 'clientes') loadClientesTab();
-  if (tab === 'cuentas'){ ensureBaseData().then(async () => { await loadCuentasCreadas(); loadNextCuentaNumber(); }); }
-  if (tab === 'cotizaciones'){ ensureBaseData().then(async () => { await loadCotizaciones(); loadNextCotizacionNumber(); }); }
 }
 
 async function loadClientesTab(){
