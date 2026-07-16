@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 8.12.2 - Estados de remisiones sincronizados en ambas direcciones (Airtable manda)
+     VERSION: 9.0.0 - Cuentas de cobro, Cotizaciones, area Almacen con clave, y optimizacion general
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -90,7 +90,8 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
     <div class="card" style="text-align:center">
       <h2 style="margin-bottom:18px;color:var(--verde-oscuro)">¿Quién eres?</h2>
       <button class="btn btn-block" style="margin-bottom:12px;padding:18px" onclick="selectRole('empleado')">🔧 Empleado</button>
-      <button class="btn btn-block btn-outline" style="padding:18px" onclick="selectRole('admin')">👔 Administrador</button>
+      <button class="btn btn-block btn-outline" style="margin-bottom:12px;padding:18px" onclick="selectRole('admin')">👔 Administrador</button>
+      <button class="btn btn-block btn-outline" style="padding:18px" onclick="selectRole('almacen')">🏬 Almacén</button>
     </div>
   </div>
 
@@ -105,6 +106,32 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       </div>
       <p id="passwordError" class="msg msg-error hidden">❌ Contraseña incorrecta</p>
       <button class="btn btn-block" onclick="checkAdminPassword()">Ingresar</button>
+    </div>
+  </div>
+
+  <!-- ================= LOGIN ALMACÉN ================= -->
+  <div id="scr-almacenLogin" class="hidden">
+    <button class="back-btn" onclick="goHome()">← Volver</button>
+    <div class="card">
+      <h2 style="margin-bottom:14px">🏬 Acceso Almacén</h2>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="almacenPassword" placeholder="••••" onkeyup="if(event.key==='Enter')checkAlmacenPassword()">
+      </div>
+      <p id="almacenPassError" class="msg msg-error hidden">❌ Contraseña incorrecta</p>
+      <button class="btn btn-block" onclick="checkAlmacenPassword()">Ingresar</button>
+    </div>
+  </div>
+
+  <!-- ================= ALMACÉN ================= -->
+  <div id="scr-almacen" class="hidden">
+    <button class="back-btn" onclick="goHome()">← Salir del Almacén</button>
+    <div class="card">
+      <h2 style="margin-bottom:12px">🏬 Almacén — Nuestros Productos
+        <button class="btn btn-sm" style="float:right" onclick="openNewProductoModal()">➕ Nuevo Producto</button>
+      </h2>
+      <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
+      <div id="nuestrosProductosList" class="loading">Cargando productos de Airtable...</div>
     </div>
   </div>
 
@@ -279,7 +306,8 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <button class="tab active" id="tab-reportes" onclick="switchAdminTab('reportes')">📋 Reportes</button>
       <button class="tab" id="tab-remisiones" onclick="switchAdminTab('remisiones')">📦 Remisiones</button>
       <button class="tab" id="tab-clientes" onclick="switchAdminTab('clientes')">👥 Clientes</button>
-      <button class="tab" id="tab-productos" onclick="switchAdminTab('productos')">🛒 Productos</button>
+      <button class="tab" id="tab-cuentas" onclick="switchAdminTab('cuentas')">💰 Ctas. Cobro</button>
+      <button class="tab" id="tab-cotizaciones" onclick="switchAdminTab('cotizaciones')">📋 Cotizaciones</button>
     </div>
 
     <!-- TAB REPORTES -->
@@ -340,14 +368,87 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       </div>
     </div>
 
-    <!-- TAB PRODUCTOS (nuestros productos) -->
-    <div id="tabc-productos" class="hidden">
+    <!-- TAB CUENTAS DE COBRO -->
+    <div id="tabc-cuentas" class="hidden">
       <div class="card">
-        <h2 style="margin-bottom:12px">🛒 Nuestros Productos
-          <button class="btn btn-sm" style="float:right" onclick="openNewProductoModal()">➕ Nuevo Producto</button>
-        </h2>
-        <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
-        <div id="nuestrosProductosList" class="loading">Cargando productos de Airtable...</div>
+        <h2 style="margin-bottom:12px">💰 Nueva Cuenta de Cobro</h2>
+        <div class="grid2">
+          <div class="form-group"><label>N° de Cuenta</label><input type="text" id="ccNumero" readonly></div>
+          <div class="form-group"><label>Quién la elabora *</label><input type="text" id="ccCreador" placeholder="Tu nombre"></div>
+        </div>
+        <div class="form-group">
+          <label>🏢 Cliente *</label>
+          <input type="text" id="ccClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCcClientes()" autocomplete="off">
+          <div id="ccClienteResultados"></div>
+          <div id="ccClienteSel"></div>
+        </div>
+        <div class="form-group">
+          <label>🛒 Conceptos / Productos <span id="ccProdHint" style="color:var(--gris);font-weight:400">(selecciona primero un cliente)</span></label>
+          <input type="text" id="ccProdBuscar" placeholder="Buscar producto o servicio..." oninput="filterCcProductos()" autocomplete="off" disabled>
+          <div id="ccProdResultados"></div>
+        </div>
+        <div id="ccProductosTabla"></div>
+        <div class="grid2">
+          <div class="form-group"><label>Forma de pago</label>
+            <select id="ccFormaPago"><option value="">-- Seleccionar --</option><option>Efectivo</option><option>Transferencia</option><option>Crédito</option><option>Cheque</option></select>
+          </div>
+          <div class="form-group"><label>Observaciones</label><input type="text" id="ccObservaciones" placeholder="Notas o condiciones"></div>
+        </div>
+        <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px">
+          <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+            <input type="checkbox" id="ccExentaIva" style="width:19px;height:19px;cursor:pointer" onchange="renderCcProductos()">
+            <span>🚫 Cuenta <strong>EXENTA de IVA</strong> (no se cobrará el 19%)</span>
+          </label>
+        </div>
+        <button class="btn btn-block" id="btnCrearCuenta" onclick="createCuentaCobro()">💰 Crear Cuenta de Cobro (genera PDF)</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Cuentas de Cobro Creadas</h2>
+        <div id="cuentasList" class="loading">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- TAB COTIZACIONES -->
+    <div id="tabc-cotizaciones" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">📋 Nueva Cotización</h2>
+        <div class="grid2">
+          <div class="form-group"><label>Código</label><input type="text" id="cotNumero" readonly></div>
+          <div class="form-group"><label>Elaborada por *</label><input type="text" id="cotFirmante"></div>
+        </div>
+        <div class="grid2">
+          <div class="form-group"><label>Cargo</label><input type="text" id="cotCargo"></div>
+          <div class="form-group"><label>Celular del firmante</label><input type="text" id="cotCel"></div>
+        </div>
+        <div class="form-group">
+          <label>🏢 Cliente *</label>
+          <input type="text" id="cotClienteBuscar" placeholder="Escribe para buscar cliente..." oninput="filterCotClientes()" autocomplete="off">
+          <div id="cotClienteResultados"></div>
+          <div id="cotClienteSel"></div>
+        </div>
+        <div class="form-group"><label>👤 Persona de contacto</label><input type="text" id="cotContacto" placeholder="Nombre de quien recibe la cotización"></div>
+        <div class="form-group"><label>📝 Motivo de la cotización *</label><input type="text" id="cotMotivo" placeholder="Ej: capacitación de personal nuevo"></div>
+        <div class="form-group">
+          <label>🛒 Productos / Servicios <span style="color:var(--gris);font-weight:400">(busca en tu catálogo o agrega manual)</span></label>
+          <input type="text" id="cotProdBuscar" placeholder="Buscar producto..." oninput="filterCotProductos()" autocomplete="off">
+          <div id="cotProdResultados"></div>
+        </div>
+        <div id="cotProductosTabla"></div>
+        <button class="btn btn-sm btn-gris" style="margin-bottom:14px" onclick="addCotItemManual()">➕ Agregar ítem manual</button>
+        <div class="grid2">
+          <div class="form-group"><label>⏳ Validez de la oferta (días)</label><input type="number" id="cotValidez" value="15" min="1"></div>
+          <div class="form-group" style="background:#fef9e7;border:1px solid #f5d98a;border-radius:9px;padding:11px;display:flex;align-items:center">
+            <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+              <input type="checkbox" id="cotSinIva" checked style="width:19px;height:19px;cursor:pointer">
+              <span>Cotización <strong>SIN IVA</strong> incluido</span>
+            </label>
+          </div>
+        </div>
+        <button class="btn btn-block" id="btnCrearCot" onclick="createCotizacion()">📋 Crear Cotización (genera PDF)</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Cotizaciones Creadas</h2>
+        <div id="cotizacionesList" class="loading">Cargando...</div>
       </div>
     </div>
 
@@ -393,6 +494,10 @@ const SELLO_TECNOCOL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdYAAAEGCA
 
 const CONFIG = {
   adminPassword: '420',
+  almacenPassword: '420',
+  beneficiario: { nombre: 'JOHN ALEXANDER TORRES ABRIL', cc: "80'155.763 de Bogotá", cel: '311 2224021' },
+  contacto: { direccion: 'Calle 38b sur #72k 70', cel: '311 2224021', tel: '+57 (1) 9 28 3175', emails: 'tecnocoljet@hotmail.com / tecnocoljet@gmail.com' },
+  comercial: { nombre: 'JULIAN TORRES', cargo: 'Gerente Comercial', cel: '3225127589' },
   empresa: { nombre: 'TECNOCOLJET S.A.S.', nit: '900283540-4', ciudad: 'Bogotá D.C.', regimen: 'REGIMEN COMUN' },
   iva: 0.19,
   firebase: {
@@ -409,12 +514,12 @@ const CONFIG = {
     // Nombres de tabla: si el primero falla, se intenta el siguiente automáticamente
     tablas: {
       clientes:   ['Clientes', 'Gestión de Clientes'],
-      productos:  ['Productos', 'Catálogo de Productos'],
       remisiones: ['Remisiones'],
       precios:    ['Lista de precios', 'Presios por cliente', 'Precios por cliente'],
       insumos:    ['Insumos', 'Lista de insumos'],
       repuestos:  ['Repuestos', 'Lista de repuestos'],
-      servicios:  ['Servicios', 'Lista de servicios']
+      servicios:  ['Servicios', 'Lista de servicios'],
+      cuentas:    ['Cuentas de cobro', 'Cuenta de cobro', 'Cuentas de Cobro']
     }
   }
 };
@@ -592,36 +697,12 @@ async function getTableSchema(nombreTabla){
 }
 const normalizar = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
-// Devuelve TODOS los nombres de columnas de una tabla (para no enviar campos inexistentes)
-async function getTableAllFieldNames(nombreTabla){
-  await listAirtableTables();
-  const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
-  return t ? t.fields.map(f => f.name) : null;
-}
 // Devuelve las columnas completas (nombre + tipo) de una tabla
 async function getTableFields(nombreTabla){
   await listAirtableTables();
   const t = (_metaTablasFull || []).find(x => normalizar(x.name) === normalizar(nombreTabla));
   return t ? t.fields.map(f => ({ name: f.name, type: f.type })) : null;
 }
-// Filtra un objeto de campos dejando solo las columnas que existen en la tabla
-async function soloColumnasExistentes(tablaKey, fields){
-  try {
-    const nombre = S.tablaResuelta[tablaKey] || CONFIG.airtable.tablas[tablaKey][0];
-    const reales = await getTableAllFieldNames(nombre);
-    if (!reales) return fields;
-    const set = new Set(reales.map(normalizar));
-    const filtrado = {};
-    Object.keys(fields).forEach(k => {
-      if (set.has(normalizar(k))){
-        const real = reales.find(rn => normalizar(rn) === normalizar(k));
-        filtrado[real] = fields[k];
-      } else console.warn('Columna omitida (no existe en Airtable):', k);
-    });
-    return filtrado;
-  } catch (e){ return fields; }
-}
-
 async function atFetch(tablaKey, params = '', options = {}){
   let nombres = S.tablaResuelta[tablaKey]
     ? [S.tablaResuelta[tablaKey]]
@@ -816,7 +897,20 @@ function precioAcordadoDe(p){
    ============================================================ */
 function selectRole(rol){
   if (rol === 'empleado') showScreen('scr-empMenu');
+  else if (rol === 'almacen') showScreen('scr-almacenLogin');
   else showScreen('scr-adminLogin');
+}
+
+function checkAlmacenPassword(){
+  if ($('almacenPassword').value === CONFIG.almacenPassword){
+    $('almacenPassword').value = '';
+    $('almacenPassError').classList.add('hidden');
+    showScreen('scr-almacen');
+    ensureBaseData().then(() => loadNuestrosProductos());
+  } else {
+    $('almacenPassError').classList.remove('hidden');
+    $('almacenPassword').value = '';
+  }
 }
 
 async function checkAdminPassword(){
@@ -845,14 +939,15 @@ function ensureBaseData(){
 }
 
 function switchAdminTab(tab){
-  ['reportes', 'remisiones', 'clientes', 'productos'].forEach(t => {
+  ['reportes', 'remisiones', 'clientes', 'cuentas', 'cotizaciones'].forEach(t => {
     $('tab-' + t).classList.toggle('active', t === tab);
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
   if (tab === 'remisiones'){ ensureBaseData().then(async () => { await loadCreatedRemisiones(); loadNextRemisionNumber(); loadEvidencias(); }); }
   if (tab === 'clientes') loadClientesTab();
-  if (tab === 'productos') loadNuestrosProductos();
+  if (tab === 'cuentas'){ ensureBaseData().then(async () => { await loadCuentasCreadas(); loadNextCuentaNumber(); }); }
+  if (tab === 'cotizaciones'){ ensureBaseData().then(async () => { await loadCotizaciones(); loadNextCotizacionNumber(); }); }
 }
 
 async function loadClientesTab(){
@@ -1016,15 +1111,6 @@ async function previewDeliveryPhoto(input){
 }
 
 function validateMotivo(){ $('saveNoDeliveryBtn').disabled = $('noEntregaMotivo').value.trim().length < 10; }
-
-async function updateRemisionAirtable(airtableId, fields){
-  if (!airtableId) return;
-  try {
-    const filtrados = await soloColumnasExistentes('remisiones', fields);
-    if (Object.keys(filtrados).length)
-      await atFetch('remisiones', `/${airtableId}`, { method: 'PATCH', body: JSON.stringify({ fields: filtrados, typecast: true }) });
-  } catch (e){ console.error('No se pudo actualizar Airtable:', e.message); }
-}
 
 // Actualiza la entrega en la fuente correcta, emparejando con las columnas REALES de Airtable
 async function actualizarEntrega(cambiosFirebase, semantico){
@@ -2250,6 +2336,675 @@ async function generateRemisionPDF(remisionId, imprimir = false){
     if (imprimir) imprimirPDF(pdf);
     return filename;
   } catch (e){ alert('❌ Error generando PDF: ' + e.message); }
+}
+
+/* ============================================================
+   15. ADMIN — CUENTAS DE COBRO
+   ============================================================ */
+S.ccCliente = null; S.ccPrecios = null; S.ccProductos = [];
+
+// Número a letras (pesos colombianos)
+function numeroALetras(n){
+  n = Math.round(n);
+  if (n === 0) return 'CERO PESOS M/CTE';
+  const U = ['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISEIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE'];
+  const D = ['','','VEINTI','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const C = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  function tres(x){
+    if (x === 0) return '';
+    if (x === 100) return 'CIEN';
+    let s = '';
+    const c = Math.floor(x / 100), r = x % 100;
+    if (c) s += C[c] + ' ';
+    if (r <= 20) s += U[r];
+    else {
+      const d = Math.floor(r / 10), u = r % 10;
+      if (d === 2) s += 'VEINTI' + (u ? U[u] : '');
+      else s += D[d] + (u ? ' Y ' + U[u] : '');
+    }
+    return s.trim();
+  }
+  const millones = Math.floor(n / 1000000), miles = Math.floor((n % 1000000) / 1000), resto = n % 1000;
+  let s = '';
+  if (millones) s += (millones === 1 ? 'UN MILLON' : tres(millones) + ' MILLONES') + ' ';
+  if (miles) s += (miles === 1 ? 'MIL' : tres(miles) + ' MIL') + ' ';
+  if (resto) s += tres(resto);
+  return s.trim() + ' PESOS M/CTE';
+}
+
+async function columnasCuentas(){
+  if (S._colsCC) return S._colsCC;
+  const campos = await getTableFields(S.tablaResuelta['cuentas'] || CONFIG.airtable.tablas.cuentas[0]) || [];
+  const b = (regex) => campos.find(f => regex.test(normalizar(f.name)));
+  S._colsCC = { todos: campos,
+    codigo: b(/codigo|numero/), cliente: b(/cliente/), estado: b(/estado/),
+    conceptos: b(/concepto|producto|detalle/), precio: b(/precio|valor|total/),
+    responsable: b(/responsable|elaborad|creador/), formaPago: b(/forma.*pago|pago/),
+    observaciones: b(/observa/), fecha: b(/fecha/)
+  };
+  return S._colsCC;
+}
+
+async function loadNextCuentaNumber(){
+  let ultimo = 0;
+  try {
+    const cols = await columnasCuentas();
+    if (cols.codigo){
+      const records = await atAll('cuentas', `fields%5B%5D=${encodeURIComponent(cols.codigo.name)}`);
+      records.forEach(r => {
+        const n = parseInt(String(r.fields[cols.codigo.name] || '').replace(/\D/g, ''));
+        if (!isNaN(n) && n > ultimo) ultimo = n;
+      });
+    }
+  } catch (e){ console.warn('Códigos de cuentas no leídos de Airtable:', e.message); }
+  try {
+    const snap = await db.collection('cuentasCobro').get();
+    snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
+  } catch (e){}
+  $('ccNumero').value = (ultimo || 0) + 1;
+}
+
+function filterCcClientes(){
+  const q = $('ccClienteBuscar').value.trim();
+  const box = $('ccClienteResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const matches = buscarParecidos(q, Object.values(S.clientes), c => `${c.name} ${c.razonSocial || ''} ${c.documento || ''}`, 6);
+  box.innerHTML = matches.map(c =>
+    `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectCcCliente('${c.id}')">🏢 ${esc(c.name)}</div>`
+  ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+async function selectCcCliente(id){
+  S.ccCliente = S.clientes[id];
+  S.ccProductos = [];
+  $('ccClienteBuscar').value = ''; $('ccClienteResultados').innerHTML = '';
+  $('ccClienteSel').innerHTML = `<div class="info-card"><strong>✅ ${esc(S.ccCliente.name)}</strong><br>NIT: ${esc(S.ccCliente.documento) || '—'} · ${esc(S.ccCliente.ciudad) || '—'}</div>`;
+  $('ccProdHint').textContent = '(cargando precios del cliente...)';
+  renderCcProductos();
+  S.ccPrecios = await loadPreciosCliente(S.ccCliente);
+  const n = Math.max(Object.keys(S.ccPrecios.porCodigo).length, Object.keys(S.ccPrecios.porNombre).length, Object.keys(S.ccPrecios.porId || {}).length);
+  $('ccProdBuscar').disabled = false;
+  $('ccProdHint').textContent = n ? `(${n} producto${n === 1 ? '' : 's'} con precio acordado ⭐)` : '(sin precios acordados — precios estándar, editables)';
+}
+
+function ccAcordadoDe(p){
+  if (!S.ccPrecios) return null;
+  return S.ccPrecios.porId?.[p.id] || S.ccPrecios.porNombre[normalizar(p.nombre)] || (p.codigo && S.ccPrecios.porCodigo[p.codigo]) || null;
+}
+
+function filterCcProductos(){
+  const q = $('ccProdBuscar').value.trim();
+  const box = $('ccProdResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
+  const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
+  box.innerHTML = matches.map(p => {
+    const acordado = ccAcordadoDe(p);
+    const precio = acordado ? acordado.precio : (p.precioBase || 0);
+    return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addCcProducto('${p.id}')">
+      <span>${iconos[p.categoria] || '📦'} ${p.codigo ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px">${esc(p.codigo)}</span> ` : ''}${esc(p.nombre)}</span>
+      <strong style="color:var(--verde-oscuro);white-space:nowrap">${precio ? money(precio) : 'sin precio'}${acordado ? ' ⭐' : ''}</strong>
+    </div>`;
+  }).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+function addCcProducto(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  if (!p) return;
+  if (S.ccProductos.find(x => x.id === prodId)){ alert('⚠️ Ese concepto ya está en la cuenta'); return; }
+  const acordado = ccAcordadoDe(p);
+  S.ccProductos.push({
+    id: prodId, codigo: p.codigo, nombre: p.nombre, cantidad: 1,
+    precioUnitario: acordado ? acordado.precio : (p.precioBase || 0),
+    precioAcordado: !!acordado
+  });
+  $('ccProdBuscar').value = ''; $('ccProdResultados').innerHTML = '';
+  renderCcProductos();
+}
+
+function setCcCantidad(i, val){ const n = parseInt(val); if (!isNaN(n) && n > 0) S.ccProductos[i].cantidad = n; renderCcProductos(); }
+function setCcPrecio(i, val){
+  if (S.ccProductos[i].precioAcordado) return;
+  const n = parseFloat(String(val).replace(/[.,$\s]/g, m => m === ',' ? '.' : ''));
+  if (!isNaN(n) && n >= 0) S.ccProductos[i].precioUnitario = n;
+  renderCcProductos();
+}
+function removeCcProducto(i){ S.ccProductos.splice(i, 1); renderCcProductos(); }
+
+function ccTotales(){
+  const subtotal = S.ccProductos.reduce((s, p) => s + p.cantidad * p.precioUnitario, 0);
+  const exenta = $('ccExentaIva')?.checked || false;
+  const iva = exenta ? 0 : Math.round(subtotal * CONFIG.iva);
+  return { subtotal, iva, precioTotal: subtotal + iva, exentaIva: exenta };
+}
+
+function renderCcProductos(){
+  const box = $('ccProductosTabla');
+  if (!S.ccProductos.length){ box.innerHTML = ''; return; }
+  const t = ccTotales();
+  box.innerHTML = `<table class="mini" style="margin:10px 0">
+    <tr><th>Concepto</th><th>Cant.</th><th>V/Unit</th><th>V/Total</th><th></th></tr>
+    ${S.ccProductos.map((p, i) => `<tr>
+      <td>${esc(p.nombre)}</td>
+      <td><input type="number" min="1" value="${p.cantidad}" style="width:58px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCcCantidad(${i},this.value)"></td>
+      <td>${p.precioAcordado
+        ? `<span title="Precio acordado con el cliente">⭐ ${money(p.precioUnitario)} 🔒</span>`
+        : `<input type="number" min="0" step="any" value="${p.precioUnitario}" style="width:98px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCcPrecio(${i},this.value)">`}</td>
+      <td>${money(p.cantidad * p.precioUnitario)}</td>
+      <td><button class="btn btn-sm btn-rojo" onclick="removeCcProducto(${i})">✕</button></td>
+    </tr>`).join('')}
+    <tr><td colspan="3" style="text-align:right"><strong>SUBTOTAL</strong></td><td colspan="2"><strong>${money(t.subtotal)}</strong></td></tr>
+    <tr><td colspan="3" style="text-align:right">${t.exentaIva ? 'IVA <span style="color:var(--amarillo);font-weight:700">(EXENTA)</span>' : 'IVA 19%'}</td><td colspan="2">${money(t.iva)}</td></tr>
+    <tr><td colspan="3" style="text-align:right"><strong>TOTAL A COBRAR</strong></td><td colspan="2"><strong style="color:var(--verde-oscuro)">${money(t.precioTotal)}</strong></td></tr>
+  </table>`;
+}
+
+async function createCuentaCobro(){
+  const numero = $('ccNumero').value;
+  const creador = $('ccCreador').value.trim();
+  if (!creador){ alert('⚠️ Escribe quién elabora la cuenta'); return; }
+  if (!S.ccCliente){ alert('⚠️ Selecciona un cliente'); return; }
+  if (!S.ccProductos.length){ alert('⚠️ Agrega al menos un concepto'); return; }
+  const sinPrecio = S.ccProductos.filter(p => !p.precioUnitario || p.precioUnitario <= 0);
+  if (sinPrecio.length){ alert('⚠️ Estos conceptos tienen precio en $0:\n\n' + sinPrecio.map(p => '• ' + p.nombre).join('\n')); return; }
+
+  const btn = $('btnCrearCuenta'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const t = ccTotales();
+  const fechaCreacion = new Date().toISOString();
+  const cuenta = {
+    numero: parseInt(numero), clientId: S.ccCliente.id, clientName: S.ccCliente.name,
+    responsable: creador, formaPago: $('ccFormaPago').value || '', observaciones: $('ccObservaciones').value || '',
+    productos: S.ccProductos, subtotal: t.subtotal, iva: t.iva, precioTotal: t.precioTotal,
+    exentaIva: t.exentaIva, estado: 'Pendiente', createdAt: ts(), fechaCreacion
+  };
+  try {
+    const docRef = await db.collection('cuentasCobro').add(cuenta);
+    // Sincronizar a Airtable con columnas reales
+    try {
+      const cols = await columnasCuentas();
+      const fields = {};
+      const poner = (col, valor) => { if (col && valor !== undefined && valor !== '') fields[col.name] = valor; };
+      poner(cols.codigo, cols.codigo && /text/i.test(cols.codigo.type) ? String(numero) : parseInt(numero));
+      if (cols.cliente) poner(cols.cliente, cols.cliente.type === 'multipleRecordLinks' ? [S.ccCliente.airtableId] : S.ccCliente.name);
+      poner(cols.conceptos, S.ccProductos.map(p => `${p.cantidad} ${p.nombre}`).join(', '));
+      poner(cols.precio, Math.round(t.precioTotal));
+      poner(cols.estado, 'Pendiente');
+      poner(cols.responsable, creador);
+      poner(cols.formaPago, $('ccFormaPago').value || '');
+      poner(cols.observaciones, $('ccObservaciones').value || '');
+      if (cols.fecha && !['createdTime','formula'].includes(cols.fecha.type)) poner(cols.fecha, cols.fecha.type === 'date' ? fechaCreacion.split('T')[0] : fechaCreacion);
+      const at = await atFetch('cuentas', '', { method: 'POST', body: JSON.stringify({ fields, typecast: true }) });
+      await docRef.update({ airtableId: at.id });
+    } catch (e){
+      console.error('Airtable falló:', e);
+      alert('⚠️ La cuenta se guardó en el sistema pero NO en Airtable: ' + e.message);
+    }
+    flash('adminMsg', `✅ Cuenta de cobro #${numero} creada`);
+    await generateCuentaPDF(docRef.id, true);
+    S.ccCliente = null; S.ccProductos = []; S.ccPrecios = null;
+    $('ccClienteSel').innerHTML = ''; $('ccCreador').value = ''; $('ccFormaPago').value = '';
+    $('ccObservaciones').value = ''; $('ccExentaIva').checked = false;
+    $('ccProdBuscar').disabled = true; $('ccProdHint').textContent = '(selecciona primero un cliente)';
+    renderCcProductos();
+    await loadCuentasCreadas();
+    loadNextCuentaNumber();
+  } catch (e){ alert('❌ Error creando la cuenta: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '💰 Crear Cuenta de Cobro (genera PDF)'; }
+}
+
+async function loadCuentasCreadas(){
+  const box = $('cuentasList');
+  box.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    let snap = await db.collection('cuentasCobro').get();
+    // Sincronizar borrados desde Airtable
+    try {
+      const cols = await columnasCuentas();
+      if (cols.codigo){
+        const registros = await atAll('cuentas', `fields%5B%5D=${encodeURIComponent(cols.codigo.name)}`);
+        const ids = new Set(registros.map(r => r.id));
+        const huerfanas = snap.docs.filter(d => d.data().airtableId && !ids.has(d.data().airtableId));
+        if (huerfanas.length){
+          await Promise.all(huerfanas.map(d => d.ref.delete()));
+          snap = await db.collection('cuentasCobro').get();
+        }
+      }
+    } catch (e){ console.warn('Sin sync de cuentas:', e.message); }
+    if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin cuentas de cobro creadas</p>'; return; }
+    const docs = snap.docs.sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 30);
+    box.innerHTML = docs.map(d => {
+      const r = d.data();
+      return `<div class="item-card">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <strong>#${esc(r.numero)} · ${esc(r.clientName)}</strong>
+          <strong style="color:var(--verde-oscuro)">${money(r.precioTotal)}</strong>
+        </div>
+        <p style="font-size:13px;color:var(--gris);margin:6px 0">${(r.productos || []).length} concepto(s)${r.exentaIva ? ' · 🚫 Exenta de IVA' : ''}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="generateCuentaPDF('${d.id}')">📄 PDF</button>
+          <button class="btn btn-sm btn-rojo" onclick="deleteCuenta('${d.id}','${r.airtableId || ''}')">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function deleteCuenta(firebaseId, airtableId){
+  if (!confirm('¿Eliminar esta cuenta de cobro? Se borrará del sistema y de Airtable.')) return;
+  try {
+    await db.collection('cuentasCobro').doc(firebaseId).delete();
+    if (airtableId){
+      try { await atFetch('cuentas', `/${airtableId}`, { method: 'DELETE' }); }
+      catch (e){ console.error('Airtable:', e.message); }
+    }
+    flash('adminMsg', '🗑️ Cuenta de cobro eliminada');
+    await loadCuentasCreadas();
+    loadNextCuentaNumber();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+// ===== PDF de la cuenta de cobro (formato TECNOCOLJET basado en tu Word) =====
+async function generateCuentaPDF(cuentaId, imprimir = false){
+  try {
+    const doc = await db.collection('cuentasCobro').doc(cuentaId).get();
+    if (!doc.exists){ alert('❌ Cuenta no encontrada'); return; }
+    const r = doc.data();
+    const c = S.clientes[r.clientId] || {};
+    const B = CONFIG.beneficiario;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    const W = pdf.internal.pageSize.getWidth();
+    const VERDE = [107, 168, 62], VERDE_OSC = [74, 124, 44], GRIS = [107, 114, 128];
+
+    // Encabezado con logo y referencia
+    try { pdf.addImage(LOGO_TECNOCOL, 'JPEG', 10, 8, 56, 23.7); } catch (e){}
+    pdf.setDrawColor(...VERDE); pdf.setLineWidth(0.8);
+    pdf.setFillColor(240, 249, 240); pdf.roundedRect(W - 62, 9, 52, 20, 2, 2, 'FD');
+    pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+    pdf.text('CUENTA DE COBRO', W - 36, 16, { align: 'center' });
+    pdf.setFontSize(13);
+    pdf.text('REF. ' + String(r.numero).padStart(3, '0'), W - 36, 24, { align: 'center' });
+    pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.2); pdf.line(10, 37, W - 10, 37);
+
+    let y = 48;
+    const fecha = r.createdAt ? r.createdAt.toDate() : new Date();
+    pdf.setTextColor(40); pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
+    pdf.text(`BOGOTÁ D.C., ${fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()}`, 12, y);
+    y += 16;
+
+    // Deudor
+    pdf.setFontSize(14); pdf.setFont('helvetica', 'bold');
+    pdf.text(String(c.razonSocial || r.clientName).toUpperCase(), W / 2, y, { align: 'center' }); y += 6.5;
+    pdf.setFontSize(11);
+    pdf.text(`NIT: ${c.documento || '—'}`, W / 2, y, { align: 'center' }); y += 13;
+
+    // "Le debe a"
+    pdf.setFontSize(10.5); pdf.setFont('helvetica', 'normal');
+    const debeA = pdf.splitTextToSize(`Le debe al señor ${B.nombre}, identificado con cédula de ciudadanía ${B.cc},`, W - 40);
+    pdf.text(debeA, W / 2, y, { align: 'center' });
+    y += debeA.length * 5.2 + 4;
+
+    // Suma en letras
+    pdf.setFillColor(240, 249, 240);
+    const letras = pdf.splitTextToSize(`LA SUMA DE ${money(r.precioTotal)} (${numeroALetras(r.precioTotal)})`, W - 40);
+    pdf.roundedRect(14, y - 5, W - 28, letras.length * 5.2 + 8, 2, 2, 'F');
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...VERDE_OSC); pdf.setFontSize(10.5);
+    pdf.text(letras, W / 2, y, { align: 'center' });
+    y += letras.length * 5.2 + 10;
+    pdf.setTextColor(40); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10.5);
+    pdf.text('Por concepto de:', 12, y); y += 6;
+
+    // Tabla de conceptos: N° | DESCRIPCIÓN | VALOR UNIDAD | VALOR TOTAL
+    pdf.setFillColor(...VERDE); pdf.rect(10, y, W - 20, 8, 'F');
+    pdf.setTextColor(255); pdf.setFontSize(9); pdf.setFont('helvetica', 'bold');
+    pdf.text('N°', 14, y + 5.5);
+    pdf.text('DESCRIPCIÓN', 24, y + 5.5);
+    pdf.text('VALOR UNIDAD', 158, y + 5.5, { align: 'right' });
+    pdf.text('VALOR TOTAL', 197, y + 5.5, { align: 'right' });
+    y += 8;
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(40);
+    (r.productos || []).forEach((p, i) => {
+      const texto = `(${p.cantidad}) ${p.nombre}`;
+      const desc = pdf.splitTextToSize(texto, 100);
+      const alto = Math.max(8, desc.length * 4.5 + 3.5);
+      if (y + alto > 240){ pdf.addPage(); y = 20; }
+      if (i % 2 === 0){ pdf.setFillColor(246, 250, 243); pdf.rect(10, y, W - 20, alto, 'F'); }
+      pdf.text(`${i + 1}°`, 14, y + 5.5);
+      pdf.text(desc, 24, y + 5.5);
+      pdf.text(money(p.precioUnitario), 158, y + 5.5, { align: 'right' });
+      pdf.text(money(p.cantidad * p.precioUnitario), 197, y + 5.5, { align: 'right' });
+      pdf.setDrawColor(225); pdf.setLineWidth(0.2); pdf.line(10, y + alto, W - 10, y + alto);
+      y += alto;
+    });
+    y += 5;
+
+    // Totales (IVA solo si aplica)
+    pdf.setFontSize(9.5); pdf.setTextColor(60);
+    if (r.iva > 0){
+      [['SUBTOTAL', money(r.subtotal)], ['IVA 19%', money(r.iva)]].forEach(([lab, val]) => {
+        pdf.setFont('helvetica', 'bold'); pdf.text(lab, 158, y, { align: 'right' });
+        pdf.setFont('helvetica', 'normal'); pdf.text(val, 197, y, { align: 'right' });
+        y += 5.5;
+      });
+    }
+    pdf.setFillColor(...VERDE); pdf.roundedRect(104, y, 96, 10, 1.5, 1.5, 'F');
+    pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10.5);
+    pdf.text('VALOR TOTAL', 108, y + 7);
+    pdf.text(money(r.precioTotal) + ' M/CTE', 196, y + 7, { align: 'right' });
+    y += 18;
+
+    if (r.formaPago || r.observaciones){
+      pdf.setTextColor(...GRIS); pdf.setFontSize(9); pdf.setFont('helvetica', 'italic');
+      if (r.formaPago){ pdf.text('Forma de pago: ' + r.formaPago, 12, y); y += 5; }
+      if (r.observaciones){
+        const obs = pdf.splitTextToSize('Observaciones: ' + r.observaciones, W - 24);
+        pdf.text(obs, 12, y); y += obs.length * 4.5;
+      }
+      y += 3;
+    }
+
+    pdf.setTextColor(40); pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
+    if (y + 60 > 285){ pdf.addPage(); y = 30; }
+    pdf.text('Sin otro particular,', 12, y + 4);
+
+    // Firmas a dos columnas: beneficiario (con sello) | cliente
+    const yf = Math.max(y + 40, 240);
+    try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 28, yf - 27, 44, 24.5); } catch (e){}
+    pdf.setDrawColor(100); pdf.setLineWidth(0.4);
+    pdf.line(18, yf, 92, yf); pdf.line(118, yf, 192, yf);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+    pdf.text(B.nombre, 55, yf + 5, { align: 'center' });
+    pdf.text(String(c.razonSocial || r.clientName).toUpperCase(), 155, yf + 5, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...GRIS); pdf.setFontSize(8.5);
+    pdf.text(`C.C. ${B.cc}`, 55, yf + 10, { align: 'center' });
+    pdf.text(`CEL ${B.cel}`, 55, yf + 15, { align: 'center' });
+    pdf.text(`NIT ${c.documento || '—'}`, 155, yf + 10, { align: 'center' });
+
+    pdf.setFontSize(7.5); pdf.setTextColor(...GRIS);
+    pdf.text(`Sistema Operativo Empresarial TECNOCOLJET · ${new Date().toLocaleString('es-CO')}`, W / 2, 290, { align: 'center' });
+
+    const filename = `CUENTA_COBRO_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.pdf`;
+    pdf.save(filename);
+    if (imprimir) imprimirPDF(pdf);
+    return filename;
+  } catch (e){ alert('❌ Error generando el PDF: ' + e.message); }
+}
+
+/* ============================================================
+   16. ADMIN — COTIZACIONES
+   ============================================================ */
+S.cotCliente = null; S.cotItems = [];
+
+async function loadNextCotizacionNumber(){
+  let ultimo = 100; // arranca en 101M si no hay historial
+  try {
+    const snap = await db.collection('cotizaciones').get();
+    snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
+  } catch (e){}
+  $('cotNumero').value = (ultimo + 1) + 'M';
+  $('cotFirmante').value = $('cotFirmante').value || CONFIG.comercial.nombre;
+  $('cotCargo').value = $('cotCargo').value || CONFIG.comercial.cargo;
+  $('cotCel').value = $('cotCel').value || CONFIG.comercial.cel;
+}
+
+function filterCotClientes(){
+  const q = $('cotClienteBuscar').value.trim();
+  const box = $('cotClienteResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const matches = buscarParecidos(q, Object.values(S.clientes), c => `${c.name} ${c.razonSocial || ''} ${c.documento || ''}`, 6);
+  box.innerHTML = matches.map(c =>
+    `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectCotCliente('${c.id}')">🏢 ${esc(c.name)}</div>`
+  ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+function selectCotCliente(id){
+  S.cotCliente = S.clientes[id];
+  $('cotClienteBuscar').value = ''; $('cotClienteResultados').innerHTML = '';
+  $('cotClienteSel').innerHTML = `<div class="info-card"><strong>✅ ${esc(S.cotCliente.name)}</strong><br>NIT: ${esc(S.cotCliente.documento) || '—'} · ${esc(S.cotCliente.ciudad) || '—'}</div>`;
+}
+
+function filterCotProductos(){
+  const q = $('cotProdBuscar').value.trim();
+  const box = $('cotProdResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
+  const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
+  box.innerHTML = matches.map(p =>
+    `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;gap:6px" onclick="addCotItem('${p.id}')">
+      <span>${iconos[p.categoria] || '📦'} ${esc(p.nombre)}</span>
+      <strong style="color:var(--verde-oscuro)">${p.precioBase ? money(p.precioBase) : ''}</strong>
+    </div>`
+  ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias — usa "Agregar ítem manual"</p>';
+}
+
+function addCotItem(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  if (!p) return;
+  S.cotItems.push({ referencia: p.codigo || '', descripcion: p.nombre, cantidad: 1, precio: p.precioBase || 0 });
+  $('cotProdBuscar').value = ''; $('cotProdResultados').innerHTML = '';
+  renderCotItems();
+}
+function addCotItemManual(){
+  S.cotItems.push({ referencia: '', descripcion: '', cantidad: 1, precio: 0 });
+  renderCotItems();
+}
+function setCotItem(i, campo, val){
+  if (campo === 'cantidad'){ const n = parseInt(val); if (!isNaN(n) && n > 0) S.cotItems[i].cantidad = n; }
+  else if (campo === 'precio'){ const n = parseFloat(val); if (!isNaN(n) && n >= 0) S.cotItems[i].precio = n; }
+  else S.cotItems[i][campo] = val;
+  renderCotItems();
+}
+function removeCotItem(i){ S.cotItems.splice(i, 1); renderCotItems(); }
+
+function renderCotItems(){
+  const box = $('cotProductosTabla');
+  if (!S.cotItems.length){ box.innerHTML = ''; return; }
+  const total = S.cotItems.reduce((s, it) => s + it.cantidad * it.precio, 0);
+  box.innerHTML = `<table class="mini" style="margin:10px 0">
+    <tr><th>Ref.</th><th>Descripción</th><th>Cant.</th><th>Vlr. Unit</th><th>Vlr. Total</th><th></th></tr>
+    ${S.cotItems.map((it, i) => `<tr>
+      <td><input type="text" value="${esc(it.referencia)}" style="width:80px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCotItem(${i},'referencia',this.value)"></td>
+      <td><input type="text" value="${esc(it.descripcion)}" placeholder="Descripción" style="width:100%;min-width:130px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCotItem(${i},'descripcion',this.value)"></td>
+      <td><input type="number" min="1" value="${it.cantidad}" style="width:54px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCotItem(${i},'cantidad',this.value)"></td>
+      <td><input type="number" min="0" step="any" value="${it.precio}" style="width:95px;padding:5px;border:1px solid #ddd;border-radius:6px" onchange="setCotItem(${i},'precio',this.value)"></td>
+      <td>${money(it.cantidad * it.precio)}</td>
+      <td><button class="btn btn-sm btn-rojo" onclick="removeCotItem(${i})">✕</button></td>
+    </tr>`).join('')}
+    <tr><td colspan="4" style="text-align:right"><strong>TOTAL COTIZADO</strong></td><td colspan="2"><strong style="color:var(--verde-oscuro)">${money(total)}</strong></td></tr>
+  </table>`;
+}
+
+async function createCotizacion(){
+  const firmante = $('cotFirmante').value.trim();
+  const motivo = $('cotMotivo').value.trim();
+  if (!firmante){ alert('⚠️ Escribe quién elabora la cotización'); return; }
+  if (!S.cotCliente){ alert('⚠️ Selecciona un cliente'); return; }
+  if (!motivo){ alert('⚠️ Escribe el motivo de la cotización'); return; }
+  const items = S.cotItems.filter(it => it.descripcion.trim());
+  if (!items.length){ alert('⚠️ Agrega al menos un ítem con descripción'); return; }
+  const sinPrecio = items.filter(it => !it.precio || it.precio <= 0);
+  if (sinPrecio.length){ alert('⚠️ Ítems con precio en $0:\n\n' + sinPrecio.map(it => '• ' + it.descripcion).join('\n')); return; }
+
+  const btn = $('btnCrearCot'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const total = items.reduce((s, it) => s + it.cantidad * it.precio, 0);
+  try {
+    const docRef = await db.collection('cotizaciones').add({
+      numero: parseInt($('cotNumero').value), clientId: S.cotCliente.id, clientName: S.cotCliente.name,
+      contacto: $('cotContacto').value.trim(), motivo,
+      firmante, cargo: $('cotCargo').value.trim(), celFirmante: $('cotCel').value.trim(),
+      items, total, validezDias: parseInt($('cotValidez').value) || 15,
+      sinIva: $('cotSinIva').checked, createdAt: ts()
+    });
+    flash('adminMsg', `✅ Cotización ${$('cotNumero').value} creada`);
+    await generateCotizacionPDF(docRef.id, true);
+    S.cotCliente = null; S.cotItems = [];
+    $('cotClienteSel').innerHTML = ''; $('cotContacto').value = ''; $('cotMotivo').value = '';
+    $('cotValidez').value = 15; $('cotSinIva').checked = true;
+    renderCotItems();
+    await loadCotizaciones();
+    loadNextCotizacionNumber();
+  } catch (e){ alert('❌ Error creando la cotización: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '📋 Crear Cotización (genera PDF)'; }
+}
+
+async function loadCotizaciones(){
+  const box = $('cotizacionesList');
+  box.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const snap = await db.collection('cotizaciones').get();
+    if (snap.empty){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin cotizaciones creadas</p>'; return; }
+    const docs = snap.docs.sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 30);
+    box.innerHTML = docs.map(d => {
+      const r = d.data();
+      const f = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('es-CO') : '';
+      return `<div class="item-card">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <strong>COD ${esc(r.numero)}M · ${esc(r.clientName)}</strong>
+          <strong style="color:var(--verde-oscuro)">${money(r.total)}</strong>
+        </div>
+        <p style="font-size:13px;color:var(--gris);margin:6px 0">${f} · ${esc(r.motivo || '')}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="generateCotizacionPDF('${d.id}')">📄 PDF</button>
+          <button class="btn btn-sm btn-rojo" onclick="deleteCotizacion('${d.id}')">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function deleteCotizacion(id){
+  if (!confirm('¿Eliminar esta cotización?')) return;
+  try {
+    await db.collection('cotizaciones').doc(id).delete();
+    flash('adminMsg', '🗑️ Cotización eliminada');
+    await loadCotizaciones();
+    loadNextCotizacionNumber();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+// ===== PDF de la cotización (formato TECNOCOLJET) =====
+async function generateCotizacionPDF(cotId, imprimir = false){
+  try {
+    const doc = await db.collection('cotizaciones').doc(cotId).get();
+    if (!doc.exists){ alert('❌ Cotización no encontrada'); return; }
+    const r = doc.data();
+    const c = S.clientes[r.clientId] || {};
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    const W = pdf.internal.pageSize.getWidth();
+    const VERDE = [107, 168, 62], VERDE_OSC = [74, 124, 44], GRIS = [107, 114, 128];
+    const fecha = r.createdAt ? r.createdAt.toDate() : new Date();
+
+    // Logo grande centrado a la izquierda + caja de código
+    try { pdf.addImage(LOGO_TECNOCOL, 'JPEG', 12, 10, 64, 27.1); } catch (e){}
+    pdf.setFillColor(240, 249, 240); pdf.setDrawColor(...VERDE); pdf.setLineWidth(0.8);
+    pdf.roundedRect(W - 60, 12, 50, 18, 2, 2, 'FD');
+    pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10);
+    pdf.text('COTIZACIÓN', W - 35, 19, { align: 'center' });
+    pdf.text('COD: ' + r.numero + 'M', W - 35, 26, { align: 'center' });
+
+    let y = 46;
+    pdf.setTextColor(40); pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
+    pdf.text(`Bogotá D.C.  ${fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()}`, 12, y);
+    y += 10;
+
+    // Tabla de datos del cliente (2 filas de encabezados verdes)
+    const filaDatos = (labels, valores, yy) => {
+      pdf.setFillColor(...VERDE); pdf.rect(10, yy, W - 20, 7, 'F');
+      pdf.setTextColor(255); pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold');
+      const anchos = [34, 44, 44, 34, 34];
+      let x = 10;
+      labels.forEach((l, i) => { pdf.text(l, x + 2, yy + 4.8); x += anchos[i]; });
+      yy += 7;
+      const altoV = 9;
+      pdf.setFillColor(246, 250, 243); pdf.rect(10, yy, W - 20, altoV, 'F');
+      pdf.setTextColor(40); pdf.setFont('helvetica', 'normal');
+      x = 10;
+      valores.forEach((v, i) => {
+        const lineas = pdf.splitTextToSize(String(v || ''), anchos[i] - 4);
+        pdf.text(lineas.slice(0, 2), x + 2, yy + 4);
+        x += anchos[i];
+      });
+      return yy + altoV;
+    };
+    y = filaDatos(
+      ['NIT', 'CLIENTE', 'CONTACTO', 'FECHA', 'CIUDAD'],
+      [c.documento, c.razonSocial || r.clientName, r.contacto, fecha.toLocaleDateString('es-CO'), c.ciudad], y);
+    y = filaDatos(
+      ['TEL', 'DIRECCIÓN', 'E-MAIL', 'TOTAL COTIZADO', ''],
+      [c.telefono, c.direccion, c.email, money(r.total), ''], y);
+    y += 10;
+
+    // Saludo y motivo
+    pdf.setTextColor(40); pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
+    pdf.text('Respetado Ing,', 12, y); y += 7;
+    const intro = pdf.splitTextToSize(`Atendiendo a su amable solicitud enviamos cotización de ${r.motivo}. ${CONFIG.empresa.nombre} tiene el placer de poner nuestra compañía a su servicio.`, W - 24);
+    pdf.text(intro, 12, y); y += intro.length * 5 + 8;
+
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.setTextColor(...VERDE_OSC);
+    pdf.text('OFERTA COMERCIAL', W / 2, y, { align: 'center' }); y += 7;
+
+    // Tabla de ítems
+    pdf.setFillColor(...VERDE); pdf.rect(10, y, W - 20, 8, 'F');
+    pdf.setTextColor(255); pdf.setFontSize(8.5);
+    pdf.text('ITEM', 12, y + 5.5); pdf.text('REFERENCIA', 24, y + 5.5); pdf.text('DESCRIPCIÓN', 62, y + 5.5);
+    pdf.text('CANT.', 133, y + 5.5, { align: 'center' });
+    pdf.text('VLR. UNIT', 165, y + 5.5, { align: 'right' }); pdf.text('VLR. TOTAL', 197, y + 5.5, { align: 'right' });
+    y += 8;
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(40); pdf.setFontSize(9);
+    (r.items || []).forEach((it, i) => {
+      const ref = pdf.splitTextToSize(String(it.referencia || ''), 36);
+      const desc = pdf.splitTextToSize(String(it.descripcion), 66);
+      const alto = Math.max(8, Math.max(ref.length, desc.length) * 4.5 + 3.5);
+      if (y + alto > 235){ pdf.addPage(); y = 20; }
+      if (i % 2 === 0){ pdf.setFillColor(246, 250, 243); pdf.rect(10, y, W - 20, alto, 'F'); }
+      pdf.text(String(i + 1) + '.', 12, y + 5.5);
+      pdf.text(ref, 24, y + 5.5);
+      pdf.text(desc, 62, y + 5.5);
+      pdf.text(String(it.cantidad), 133, y + 5.5, { align: 'center' });
+      pdf.text(money(it.precio), 165, y + 5.5, { align: 'right' });
+      pdf.text(money(it.cantidad * it.precio), 197, y + 5.5, { align: 'right' });
+      pdf.setDrawColor(225); pdf.setLineWidth(0.2); pdf.line(10, y + alto, W - 10, y + alto);
+      y += alto;
+    });
+
+    // Condiciones comerciales + total
+    const altoCond = 16;
+    pdf.setFillColor(...VERDE); pdf.rect(10, y, W - 20, altoCond, 'F');
+    pdf.setTextColor(255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
+    pdf.text('CONDICIONES COMERCIALES', 70, y + 5, { align: 'center' });
+    pdf.text(`Validez de la oferta: ${r.validezDias} días`, 70, y + 10, { align: 'center' });
+    if (r.sinIva){
+      pdf.setFillColor(255, 244, 130); pdf.rect(28, y + 11.4, 84, 4.4, 'F');
+      pdf.setTextColor(180, 30, 30); pdf.setFontSize(8.5);
+      pdf.text('COTIZACIÓN SIN IVA INCLUIDO', 70, y + 14.6, { align: 'center' });
+    }
+    pdf.setTextColor(255); pdf.setFontSize(11);
+    pdf.text(money(r.total), 197, y + 9.5, { align: 'right' });
+    y += altoCond + 8;
+
+    pdf.setTextColor(40); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+    pdf.text('Quedamos a la espera de atender sus requerimientos o solicitudes.', 12, y);
+
+    // Firma comercial a la derecha
+    const yf = Math.max(y + 30, 238);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10);
+    pdf.text(r.firmante || CONFIG.comercial.nombre, 158, yf, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...GRIS); pdf.setFontSize(9);
+    pdf.text(r.cargo || CONFIG.comercial.cargo, 158, yf + 5, { align: 'center' });
+    pdf.text(CONFIG.empresa.nombre, 158, yf + 10, { align: 'center' });
+    pdf.text('Cel. ' + (r.celFirmante || CONFIG.comercial.cel), 158, yf + 15, { align: 'center' });
+
+    // Pie verde con datos de contacto
+    pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
+    pdf.text(`${CONFIG.contacto.direccion}. Cel: ${CONFIG.contacto.cel} Tel. ${CONFIG.contacto.tel}`, W / 2, 280, { align: 'center' });
+    pdf.text(CONFIG.contacto.emails, W / 2, 285.5, { align: 'center' });
+
+    const filename = `COTIZACION_${r.numero}M_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}.pdf`;
+    pdf.save(filename);
+    if (imprimir) imprimirPDF(pdf);
+    return filename;
+  } catch (e){ alert('❌ Error generando el PDF: ' + e.message); }
 }
 
 /* ============================================================
