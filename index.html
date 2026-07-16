@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 9.3.1 - Inventario con selector de categoria (insumos, repuestos, servicios)
+     VERSION: 9.3.2 - Secuencias de cotizacion inician en 0001 por tipo, sin contar las de formato antiguo
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -2827,7 +2827,8 @@ async function loadNextCotizacionNumber(){
     const snap = await db.collection('cotizaciones').get();
     snap.docs.forEach(d => {
       const r = d.data();
-      if ((r.tipo || 'IN') !== tipo) return; // cada tipo lleva su propia secuencia
+      if (!r.tipo) return; // las cotizaciones antiguas (formato M) no cuentan en las secuencias nuevas
+      if (r.tipo !== tipo) return; // cada tipo lleva su propia secuencia
       const n = parseInt(r.numero);
       if (!isNaN(n) && n > ultimo) ultimo = n;
     });
@@ -2951,7 +2952,7 @@ async function loadCotizaciones(){
       const f = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('es-CO') : '';
       return `<div class="item-card">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <strong>N° ${cotCodigo(r.numero, r.tipo)} · ${esc(r.clientName)}</strong>
+          <strong>N° ${r.tipo ? cotCodigo(r.numero, r.tipo) : esc(r.numero) + 'M (formato antiguo)'} · ${esc(r.clientName)}</strong>
           <strong style="color:var(--verde-oscuro)">${money(r.total)}</strong>
         </div>
         <p style="font-size:13px;color:var(--gris);margin:6px 0">${f} · ${esc(r.motivo || '')}</p>
