@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 9.1.0 - Cuentas de cobro sin IVA y PDFs de cotizacion y cuenta de cobro con diseno profesional
+     VERSION: 9.2.0 - Numeracion 0001 y por tipo IN/RE/SE, documentos por cliente, e inventario con entradas y salidas automaticas
      Arquitectura: 1 archivo | Airtable (comercial) + Firebase (operativo)
      ============================================================ -->
 <head>
@@ -127,7 +127,17 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
   <div id="scr-almacen" class="hidden">
     <button class="back-btn" onclick="goHome()">← Salir del Almacén</button>
     <div class="card">
-      <h2 style="margin-bottom:12px">🏬 Almacén — Nuestros Productos
+      <h2 style="margin-bottom:12px">📊 Inventario
+        <button class="btn btn-sm btn-outline" style="float:right" onclick="loadInventario()">🔄 Actualizar</button>
+      </h2>
+      <p style="font-size:13px;color:var(--gris);margin-bottom:10px">Entradas manuales · Salidas automáticas con cada remisión o cuenta de cobro</p>
+      <div class="form-group"><input type="text" id="invBuscar" placeholder="🔍 Buscar en el inventario..." oninput="renderInventario()"></div>
+      <div id="inventarioList" class="loading">Cargando inventario...</div>
+      <h3 style="margin:18px 0 8px;color:var(--verde-oscuro)">📜 Últimos movimientos</h3>
+      <div id="movimientosList"></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:12px">🏬 Productos del Catálogo
         <button class="btn btn-sm" style="float:right" onclick="openNewProductoModal()">➕ Nuevo Producto</button>
       </h2>
       <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
@@ -407,9 +417,16 @@ table.mini td{padding:8px;border-bottom:1px solid #eee}
       <div class="card">
         <h2 style="margin-bottom:12px">📋 Nueva Cotización</h2>
         <div class="grid2">
-          <div class="form-group"><label>Código</label><input type="text" id="cotNumero" readonly></div>
-          <div class="form-group"><label>Elaborada por *</label><input type="text" id="cotFirmante"></div>
+          <div class="form-group"><label>Tipo de cotización *</label>
+            <select id="cotTipo" onchange="loadNextCotizacionNumber()">
+              <option value="IN">🧪 Insumos (IN)</option>
+              <option value="RE">🔩 Repuestos (RE)</option>
+              <option value="SE">🛠️ Servicios (SE)</option>
+            </select>
+          </div>
+          <div class="form-group"><label>N° de Cotización</label><input type="text" id="cotNumero" readonly></div>
         </div>
+        <div class="form-group"><label>Elaborada por *</label><input type="text" id="cotFirmante"></div>
         <div class="grid2">
           <div class="form-group"><label>Cargo</label><input type="text" id="cotCargo"></div>
           <div class="form-group"><label>Celular del firmante</label><input type="text" id="cotCel"></div>
@@ -900,7 +917,7 @@ function checkAlmacenPassword(){
     $('almacenPassword').value = '';
     $('almacenPassError').classList.add('hidden');
     showScreen('scr-almacen');
-    ensureBaseData().then(() => loadNuestrosProductos());
+    ensureBaseData().then(() => { loadNuestrosProductos(); loadInventario(); });
   } else {
     $('almacenPassError').classList.remove('hidden');
     $('almacenPassword').value = '';
@@ -1957,6 +1974,7 @@ async function createRemision(){
       alert('⚠️ La remisión se guardó en el sistema pero NO en Airtable: ' + e.message);
     }
     flash('adminMsg', `✅ Remisión #${numero} creada`);
+    registrarSalidasInventario(S.remProductos, `Remisión #${numero}`, docRef.id);
     await generateRemisionPDF(docRef.id, true); // descarga + abre impresión
     // Limpiar
     S.remCliente = null; S.remProductos = []; S.remPrecios = null;
@@ -2011,7 +2029,7 @@ async function loadCreatedRemisiones(){
       const badge = r.estado === 'Entregado' ? 'badge-ok' : r.estado === 'No entregado' ? 'badge-no' : 'badge-pend';
       return `<div class="item-card">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <strong>#${esc(r.numero)} · ${esc(r.clientName)}</strong><span class="badge ${badge}">${esc(r.estado)}</span>
+          <strong>N° ${String(r.numero).padStart(4, '0')} · ${esc(r.clientName)}</strong><span class="badge ${badge}">${esc(r.estado)}</span>
         </div>
         <p style="font-size:13px;color:var(--gris);margin:6px 0">${(r.productos || []).length} producto(s) · ${money(r.precioTotal)}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2148,6 +2166,7 @@ async function deleteRemision(firebaseId, airtableId){
         await Promise.all(ev.docs.map(d => d.ref.delete()));
       } catch (e){ console.warn('Evidencias no limpiadas:', e.message); }
     }
+    await revertirSalidasInventario(firebaseId);
     flash('adminMsg', '🗑️ Remisión eliminada');
     await loadCreatedRemisiones();
     loadNextRemisionNumber();
@@ -2395,7 +2414,7 @@ async function loadNextCuentaNumber(){
     const snap = await db.collection('cuentasCobro').get();
     snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
   } catch (e){}
-  $('ccNumero').value = (ultimo || 0) + 1;
+  $('ccNumero').value = String((ultimo || 0) + 1).padStart(4, '0');
 }
 
 function filterCcClientes(){
@@ -2529,7 +2548,8 @@ async function createCuentaCobro(){
       console.error('Airtable falló:', e);
       alert('⚠️ La cuenta se guardó en el sistema pero NO en Airtable: ' + e.message);
     }
-    flash('adminMsg', `✅ Cuenta de cobro #${numero} creada`);
+    flash('adminMsg', `✅ Cuenta de cobro N° ${String(parseInt(numero)).padStart(4, '0')} creada`);
+    registrarSalidasInventario(S.ccProductos, `Cuenta de cobro N° ${String(parseInt(numero)).padStart(4, '0')}`, docRef.id);
     await generateCuentaPDF(docRef.id, true);
     S.ccCliente = null; S.ccProductos = []; S.ccPrecios = null;
     $('ccClienteSel').innerHTML = ''; $('ccCreador').value = ''; $('ccFormaPago').value = '';
@@ -2566,7 +2586,7 @@ async function loadCuentasCreadas(){
       const r = d.data();
       return `<div class="item-card">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <strong>#${esc(r.numero)} · ${esc(r.clientName)}</strong>
+          <strong>N° ${String(r.numero).padStart(4, '0')} · ${esc(r.clientName)}</strong>
           <strong style="color:var(--verde-oscuro)">${money(r.precioTotal)}</strong>
         </div>
         <p style="font-size:13px;color:var(--gris);margin:6px 0">${(r.productos || []).length} concepto(s)</p>
@@ -2587,6 +2607,7 @@ async function deleteCuenta(firebaseId, airtableId){
       try { await atFetch('cuentas', `/${airtableId}`, { method: 'DELETE' }); }
       catch (e){ console.error('Airtable:', e.message); }
     }
+    await revertirSalidasInventario(firebaseId);
     flash('adminMsg', '🗑️ Cuenta de cobro eliminada');
     await loadCuentasCreadas();
     loadNextCuentaNumber();
@@ -2615,7 +2636,7 @@ async function generateCuentaPDF(cuentaId, imprimir = false){
     pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17);
     pdf.text('CUENTA DE COBRO', W - 14, 22, { align: 'right' });
     pdf.setFontSize(10.5); pdf.setTextColor(...GRIS); pdf.setFont('helvetica', 'normal');
-    pdf.text('Referencia N° ' + String(r.numero).padStart(3, '0'), W - 14, 29, { align: 'right' });
+    pdf.text('Referencia N° ' + String(r.numero).padStart(4, '0'), W - 14, 29, { align: 'right' });
     pdf.text(`Bogotá D.C., ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`, W - 14, 35, { align: 'right' });
     // Doble línea del membrete
     pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.4); pdf.line(14, 43, W - 14, 43);
@@ -2725,7 +2746,7 @@ async function generateCuentaPDF(cuentaId, imprimir = false){
     pdf.setFontSize(7.5); pdf.setTextColor(...GRIS);
     pdf.text(`${CONFIG.contacto.direccion}  ·  Cel ${CONFIG.contacto.cel}  ·  ${CONFIG.contacto.emails}`, W / 2, 289, { align: 'center' });
 
-    const filename = `CUENTA_COBRO_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${r.numero}.pdf`;
+    const filename = `CUENTA_COBRO_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}_${String(r.numero).padStart(4, '0')}.pdf`;
     pdf.save(filename);
     if (imprimir) imprimirPDF(pdf);
     return filename;
@@ -2737,13 +2758,21 @@ async function generateCuentaPDF(cuentaId, imprimir = false){
    ============================================================ */
 S.cotCliente = null; S.cotItems = [];
 
+function cotCodigo(numero, tipo){ return String(numero).padStart(4, '0') + (tipo || ''); }
+
 async function loadNextCotizacionNumber(){
-  let ultimo = 100; // arranca en 101M si no hay historial
+  const tipo = $('cotTipo').value;
+  let ultimo = 0;
   try {
     const snap = await db.collection('cotizaciones').get();
-    snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
+    snap.docs.forEach(d => {
+      const r = d.data();
+      if ((r.tipo || 'IN') !== tipo) return; // cada tipo lleva su propia secuencia
+      const n = parseInt(r.numero);
+      if (!isNaN(n) && n > ultimo) ultimo = n;
+    });
   } catch (e){}
-  $('cotNumero').value = (ultimo + 1) + 'M';
+  $('cotNumero').value = cotCodigo(ultimo + 1, tipo);
   $('cotFirmante').value = $('cotFirmante').value || CONFIG.comercial.nombre;
   $('cotCargo').value = $('cotCargo').value || CONFIG.comercial.cargo;
   $('cotCel').value = $('cotCel').value || CONFIG.comercial.cel;
@@ -2831,13 +2860,14 @@ async function createCotizacion(){
   const total = items.reduce((s, it) => s + it.cantidad * it.precio, 0);
   try {
     const docRef = await db.collection('cotizaciones').add({
-      numero: parseInt($('cotNumero').value), clientId: S.cotCliente.id, clientName: S.cotCliente.name,
+      numero: parseInt($('cotNumero').value), tipo: $('cotTipo').value,
+      clientId: S.cotCliente.id, clientName: S.cotCliente.name,
       contacto: $('cotContacto').value.trim(), motivo,
       firmante, cargo: $('cotCargo').value.trim(), celFirmante: $('cotCel').value.trim(),
       items, total, validezDias: parseInt($('cotValidez').value) || 15,
       sinIva: $('cotSinIva').checked, createdAt: ts()
     });
-    flash('adminMsg', `✅ Cotización ${$('cotNumero').value} creada`);
+    flash('adminMsg', `✅ Cotización N° ${$('cotNumero').value} creada`);
     await generateCotizacionPDF(docRef.id, true);
     S.cotCliente = null; S.cotItems = [];
     $('cotClienteSel').innerHTML = ''; $('cotContacto').value = ''; $('cotMotivo').value = '';
@@ -2861,7 +2891,7 @@ async function loadCotizaciones(){
       const f = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('es-CO') : '';
       return `<div class="item-card">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <strong>COD ${esc(r.numero)}M · ${esc(r.clientName)}</strong>
+          <strong>N° ${cotCodigo(r.numero, r.tipo)} · ${esc(r.clientName)}</strong>
           <strong style="color:var(--verde-oscuro)">${money(r.total)}</strong>
         </div>
         <p style="font-size:13px;color:var(--gris);margin:6px 0">${f} · ${esc(r.motivo || '')}</p>
@@ -2904,7 +2934,7 @@ async function generateCotizacionPDF(cotId, imprimir = false){
     pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17);
     pdf.text('COTIZACIÓN', W - 14, 20, { align: 'right' });
     pdf.setFontSize(11); pdf.setTextColor(...VERDE);
-    pdf.text('COD: ' + r.numero + 'M', W - 14, 27.5, { align: 'right' });
+    pdf.text('N° ' + cotCodigo(r.numero, r.tipo), W - 14, 27.5, { align: 'right' });
     pdf.setFontSize(9.5); pdf.setTextColor(...GRIS); pdf.setFont('helvetica', 'normal');
     pdf.text(`Bogotá D.C., ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`, W - 14, 34, { align: 'right' });
     pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.4); pdf.line(14, 45, W - 14, 45);
@@ -3007,11 +3037,169 @@ async function generateCotizacionPDF(cotId, imprimir = false){
     pdf.setFontSize(7.5); pdf.setTextColor(...GRIS);
     pdf.text(`${CONFIG.contacto.direccion}  ·  Cel ${CONFIG.contacto.cel}  ·  Tel ${CONFIG.contacto.tel}  ·  ${CONFIG.contacto.emails}`, W / 2, 289, { align: 'center' });
 
-    const filename = `COTIZACION_${r.numero}M_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}.pdf`;
+    const filename = `COTIZACION_${cotCodigo(r.numero, r.tipo)}_${(r.clientName || 'CLIENTE').replace(/\s+/g, '_')}.pdf`;
     pdf.save(filename);
     if (imprimir) imprimirPDF(pdf);
     return filename;
   } catch (e){ alert('❌ Error generando el PDF: ' + e.message); }
+}
+
+/* ============================================================
+   17. ALMACÉN — INVENTARIO (entradas manuales, salidas automáticas)
+   ============================================================ */
+S.invMovimientos = [];
+
+async function loadInventario(){
+  const box = $('inventarioList');
+  box.innerHTML = '<div class="loading">Cargando inventario...</div>';
+  try {
+    await ensureBaseData();
+    const snap = await db.collection('inventario_movimientos').get();
+    S.invMovimientos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderInventario();
+    renderMovimientos();
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+// Existencias actuales por producto: entradas - salidas
+function stockDe(productoId){
+  return S.invMovimientos.reduce((s, m) =>
+    m.productoId === productoId ? s + (m.tipo === 'entrada' ? m.cantidad : -m.cantidad) : s, 0);
+}
+
+function renderInventario(){
+  const box = $('inventarioList');
+  const filtro = ($('invBuscar').value || '').trim();
+  // Solo insumos y repuestos llevan inventario físico
+  let items = S.productos.filter(p => p.categoria === 'insumos' || p.categoria === 'repuestos');
+  if (filtro) items = buscarParecidos(filtro, items, p => `${p.nombre} ${p.codigo}`, 999);
+  else items = [...items].sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
+  if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:12px">Sin productos</p>'; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩' };
+  box.innerHTML = items.map(p => {
+    const stock = stockDe(p.id);
+    const color = stock > 0 ? 'var(--verde)' : (stock === 0 ? '#9ca3af' : 'var(--rojo)');
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:#f9fafb;padding:9px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;border-left:3px solid ${color};gap:8px;flex-wrap:wrap">
+      <span>${iconos[p.categoria]} ${p.codigo ? `<span style="background:var(--verde-claro);color:var(--verde-oscuro);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px">${esc(p.codigo)}</span> ` : ''}${esc(p.nombre)}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <strong style="color:${color};font-size:16px">${stock}</strong>
+        <button class="btn btn-sm" onclick="abrirEntradaInventario('${p.id}')">➕ Entrada</button>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function abrirEntradaInventario(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  if (!p) return;
+  const hoy = new Date().toISOString().split('T')[0];
+  openOverlay(`
+    <h2 style="margin-bottom:6px">➕ Entrada de inventario</h2>
+    <p style="color:var(--gris);font-size:14px;margin-bottom:14px">${esc(p.nombre)}${p.codigo ? ' (' + esc(p.codigo) + ')' : ''} · Stock actual: <strong>${stockDe(p.id)}</strong></p>
+    <div class="grid2">
+      <div class="form-group"><label>Cantidad que ingresa *</label><input type="number" id="invCant" min="1" placeholder="0"></div>
+      <div class="form-group"><label>Fecha de ingreso</label><input type="date" id="invFecha" value="${hoy}"></div>
+    </div>
+    <div class="form-group"><label>Nota (opcional)</label><input type="text" id="invNota" placeholder="Ej: compra a proveedor X"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" style="flex:1" onclick="guardarEntradaInventario('${p.id}')">💾 Registrar entrada</button>
+      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
+    </div>`);
+}
+
+async function guardarEntradaInventario(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  const cant = parseInt($('invCant').value);
+  if (isNaN(cant) || cant <= 0){ alert('⚠️ Escribe una cantidad válida'); return; }
+  try {
+    const docRef = await db.collection('inventario_movimientos').add({
+      productoId: prodId, nombre: p.nombre, codigo: p.codigo || '',
+      tipo: 'entrada', cantidad: cant, fecha: $('invFecha').value,
+      nota: $('invNota').value.trim(), origen: 'Ingreso manual', createdAt: ts()
+    });
+    S.invMovimientos.push({ id: docRef.id, productoId: prodId, nombre: p.nombre, codigo: p.codigo || '', tipo: 'entrada', cantidad: cant, fecha: $('invFecha').value, nota: $('invNota').value.trim(), origen: 'Ingreso manual' });
+    closeOverlay();
+    renderInventario(); renderMovimientos();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+function renderMovimientos(){
+  const box = $('movimientosList');
+  const movs = [...S.invMovimientos].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 25);
+  if (!movs.length){ box.innerHTML = '<p style="color:var(--gris);font-size:13px">Sin movimientos registrados</p>'; return; }
+  box.innerHTML = movs.map(m => {
+    const esEntrada = m.tipo === 'entrada';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:${esEntrada ? '#f0f9f0' : '#fef2f2'};padding:8px 11px;border-radius:8px;margin-bottom:5px;font-size:13px;gap:8px;flex-wrap:wrap">
+      <span>${esEntrada ? '⬆️' : '⬇️'} <strong>${esEntrada ? '+' : '−'}${m.cantidad}</strong> ${esc(m.nombre)}
+        <span style="color:var(--gris)">· ${esc(m.fecha || '')} · ${esc(m.origen || '')}${m.nota ? ' · ' + esc(m.nota) : ''}</span></span>
+      <span style="white-space:nowrap">
+        <button class="btn btn-sm btn-azul" onclick="editarMovimiento('${m.id}')">✏️</button>
+        <button class="btn btn-sm btn-rojo" onclick="eliminarMovimiento('${m.id}')">🗑️</button>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function editarMovimiento(movId){
+  const m = S.invMovimientos.find(x => x.id === movId);
+  if (!m) return;
+  openOverlay(`
+    <h2 style="margin-bottom:6px">✏️ Editar movimiento</h2>
+    <p style="color:var(--gris);font-size:14px;margin-bottom:14px">${m.tipo === 'entrada' ? '⬆️ Entrada' : '⬇️ Salida'} · ${esc(m.nombre)} · ${esc(m.origen || '')}</p>
+    <div class="grid2">
+      <div class="form-group"><label>Cantidad *</label><input type="number" id="invCant" min="1" value="${m.cantidad}"></div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="invFecha" value="${esc(m.fecha || '')}"></div>
+    </div>
+    <div class="form-group"><label>Nota</label><input type="text" id="invNota" value="${esc(m.nota || '')}"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" style="flex:1" onclick="guardarEdicionMovimiento('${movId}')">💾 Guardar cambios</button>
+      <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
+    </div>`);
+}
+
+async function guardarEdicionMovimiento(movId){
+  const cant = parseInt($('invCant').value);
+  if (isNaN(cant) || cant <= 0){ alert('⚠️ Cantidad inválida'); return; }
+  try {
+    const cambios = { cantidad: cant, fecha: $('invFecha').value, nota: $('invNota').value.trim() };
+    await db.collection('inventario_movimientos').doc(movId).update(cambios);
+    Object.assign(S.invMovimientos.find(x => x.id === movId), cambios);
+    closeOverlay();
+    renderInventario(); renderMovimientos();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function eliminarMovimiento(movId){
+  if (!confirm('¿Eliminar este movimiento del inventario? El stock se recalculará.')) return;
+  try {
+    await db.collection('inventario_movimientos').doc(movId).delete();
+    S.invMovimientos = S.invMovimientos.filter(x => x.id !== movId);
+    renderInventario(); renderMovimientos();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+// SALIDAS AUTOMÁTICAS: al crear remisiones o cuentas de cobro se descuenta del inventario
+async function registrarSalidasInventario(productos, origen, origenId){
+  const hoy = new Date().toISOString().split('T')[0];
+  for (const item of (productos || [])){
+    const p = S.productos.find(x => x.id === item.id);
+    if (!p || p.categoria === 'servicios') continue; // los servicios no descuentan stock
+    try {
+      await db.collection('inventario_movimientos').add({
+        productoId: p.id, nombre: p.nombre, codigo: p.codigo || '',
+        tipo: 'salida', cantidad: item.cantidad, fecha: hoy,
+        nota: '', origen, origenId, createdAt: ts()
+      });
+    } catch (e){ console.warn('Salida de inventario no registrada:', e.message); }
+  }
+}
+
+// Al eliminar el documento, revertir sus salidas de inventario
+async function revertirSalidasInventario(origenId){
+  try {
+    const snap = await db.collection('inventario_movimientos').where('origenId', '==', origenId).get();
+    await Promise.all(snap.docs.map(d => d.ref.delete()));
+  } catch (e){ console.warn('Salidas no revertidas:', e.message); }
 }
 
 /* ============================================================
@@ -3282,11 +3470,14 @@ async function showClientDetails(clientId){
       <div id="cdEquipos" class="loading">Cargando...</div>
       <h3 style="margin:18px 0 8px">📋 Reportes realizados</h3>
       <div id="cdReportes" class="loading">Cargando...</div>
+      <h3 style="margin:16px 0 8px;color:var(--verde-oscuro)">📄 Documentos del cliente</h3>
+      <div id="cdDocumentos" class="loading">Cargando...</div>
     </div>`;
   box.scrollIntoView({ behavior: 'smooth' });
   loadClientPrecios(c);
   loadClientEquiposAdmin(clientId);
   loadClientReportes(clientId);
+  loadClientDocumentos(clientId);
 }
 
 async function loadClientPrecios(c){
@@ -3323,6 +3514,45 @@ async function loadClientEquiposAdmin(clientId){
         </span>
       </div>`;
     }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function loadClientDocumentos(clientId){
+  const box = $('cdDocumentos');
+  try {
+    const [rem, cc, cot] = await Promise.all([
+      db.collection('remisiones').where('clientId', '==', clientId).get(),
+      db.collection('cuentasCobro').where('clientId', '==', clientId).get(),
+      db.collection('cotizaciones').where('clientId', '==', clientId).get()
+    ]);
+    let html = '';
+    const seccion = (titulo, docs, render) => {
+      if (!docs.length) return;
+      html += `<p style="font-weight:700;font-size:13.5px;color:var(--verde-oscuro);margin:10px 0 4px">${titulo} (${docs.length})</p>`;
+      html += docs.sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 10).map(render).join('');
+    };
+    const filaDoc = (texto, valor, botonPdf) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#f9fafb;padding:8px 11px;border-radius:8px;margin-bottom:5px;font-size:13.5px;border-left:3px solid var(--verde);gap:8px">
+        <span>${texto}</span>
+        <span style="display:flex;align-items:center;gap:8px;white-space:nowrap"><strong style="color:var(--verde-oscuro)">${valor}</strong>${botonPdf}</span>
+      </div>`;
+    seccion('📦 Remisiones', rem.docs, d => {
+      const r = d.data();
+      const badge = r.estado === 'Entregado' ? '✅' : r.estado === 'No entregado' ? '❌' : '⏳';
+      return filaDoc(`${badge} Remisión #${esc(r.numero)}`, money(r.precioTotal || 0),
+        `<button class="btn btn-sm" onclick="generateRemisionPDF('${d.id}')">📄</button>`);
+    });
+    seccion('💰 Cuentas de Cobro', cc.docs, d => {
+      const r = d.data();
+      return filaDoc(`N° ${String(r.numero).padStart(4, '0')}`, money(r.precioTotal || 0),
+        `<button class="btn btn-sm" onclick="generateCuentaPDF('${d.id}')">📄</button>`);
+    });
+    seccion('📋 Cotizaciones', cot.docs, d => {
+      const r = d.data();
+      return filaDoc(`N° ${cotCodigo(r.numero, r.tipo)} · ${esc(r.motivo || '')}`, money(r.total || 0),
+        `<button class="btn btn-sm" onclick="generateCotizacionPDF('${d.id}')">📄</button>`);
+    });
+    box.innerHTML = html || '<p style="color:var(--gris);font-size:13px">Sin remisiones, cuentas ni cotizaciones aún</p>';
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
 }
 
