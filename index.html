@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.0.3 - Cuenta de cobro sin sello virtual (se firma y sella fisicamente)
+     VERSION: 14.0.5 - Cotizacion: sello virtual y firma de quien la elabora en la parte izquierda
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -4211,12 +4211,13 @@ async function generateCotizacionPDF(cotId, imprimir = false, accion = null){
 
     // ── Firma comercial ──
     const yf = Math.max(y + 32, 240);
-    pdf.setDrawColor(...NEGRO); pdf.setLineWidth(0.35); pdf.line(126, yf, 190, yf);
+    try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 26, yf - 22, 36, 20); } catch (e){}
+    pdf.setDrawColor(...NEGRO); pdf.setLineWidth(0.35); pdf.line(18, yf, 88, yf);
     pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...NEGRO); pdf.setFontSize(10);
-    pdf.text(r.firmante || CONFIG.comercial.nombre, 158, yf + 5, { align: 'center' });
+    pdf.text(r.firmante || r.elaboradoPor || CONFIG.comercial.nombre, 53, yf + 5, { align: 'center' });
     pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...GRIS); pdf.setFontSize(8.8);
-    pdf.text(`${r.cargo || CONFIG.comercial.cargo} · ${CONFIG.empresa.nombre}`, 158, yf + 10, { align: 'center' });
-    pdf.text('Cel. ' + (r.celFirmante || CONFIG.comercial.cel), 158, yf + 15, { align: 'center' });
+    pdf.text(`${r.cargo || CONFIG.comercial.cargo} · ${CONFIG.empresa.nombre}`, 53, yf + 10, { align: 'center' });
+    pdf.text('Cel. ' + (r.celFirmante || CONFIG.comercial.cel), 53, yf + 15, { align: 'center' });
 
     // ── Pie ──
     pdf.setDrawColor(...VERDE); pdf.setLineWidth(0.5); pdf.line(14, 284, W - 14, 284);
