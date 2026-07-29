@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.2.1 - Formulario de productos blindado contra campos faltantes y modal que abre en la categoria que se esta viendo
+     VERSION: 14.2.2 - El refresco de pantalla ya no se reporta como error al guardar; renders del almacen defensivos y contador con reparaciones
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -885,6 +885,7 @@ function showScreen(id){
 function goHome(){ selectRole('rol'); }
 
 function flash(containerId, text, tipo){
+  if (!$(containerId) && !$('ventasMsg') && !$('adminMsg')) return;
   let el = $(containerId);
   // Si el mensaje apunta al admin pero el usuario está en Ventas, mostrarlo allá
   const scrAdmin = document.getElementById('scr-admin');
@@ -4264,7 +4265,8 @@ function stockDe(productoId){
 
 function renderInventario(){
   const box = $('inventarioList');
-  const filtro = ($('invBuscar').value || '').trim();
+  if (!box || !$('invCategoria')) return; // la pantalla de almacén no está abierta
+  const filtro = val('invBuscar');
   const categoria = $('invCategoria').value; // 🧪/🔩/🛠️ según lo que escoja el encargado
   let items = (S.productosAlmacen || S.productos).filter(p => p.categoria === categoria);
   if (filtro) items = buscarParecidos(filtro, items, p => `${p.nombre} ${p.codigo}`, 999);
@@ -4466,11 +4468,12 @@ async function loadNuestrosProductos(){
 
 function renderNuestrosProductos(){
   const box = $('nuestrosProductosList');
-  const filtro = ($('npBuscar').value || '').trim().toLowerCase();
+  if (!box) return;
+  const filtro = val('npBuscar').toLowerCase();
   const nd = k => (S.npData[k] || []).length;
-  const total = nd('insumos') + nd('repuestos') + nd('servicios') + nd('equipos') + nd('accesorios');
+  const total = nd('insumos') + nd('repuestos') + nd('servicios') + nd('equipos') + nd('accesorios') + nd('reparaciones');
   let html = `<div style="background:var(--v-claro);color:var(--v-osc);border-radius:9px;padding:9px 14px;font-weight:700;font-size:13.5px;margin-bottom:12px;text-align:center">
-    🛒 ${total} en total · 🧪 ${nd('insumos')} · 🔩 ${nd('repuestos')} · 🛠️ ${nd('servicios')} · 🖨️ ${nd('equipos')} · 🔌 ${nd('accesorios')}
+    🛒 ${total} en total · 🧪 ${nd('insumos')} · 🔩 ${nd('repuestos')} · 🛠️ ${nd('servicios')} · 🖨️ ${nd('equipos')} · 🔌 ${nd('accesorios')} · 🔧 ${nd('reparaciones')}
   </div>`;
   const catSel = $('npCategoriaSel')?.value;
   const categorias = catSel ? [catSel] : Object.keys(NP_TABLAS); // mostrar solo la categoría escogida
@@ -4655,7 +4658,9 @@ async function saveNuestroProducto(){
       closeOverlay();
       flash('adminMsg', `✅ Reparación guardada: ${esc(nombreRep)} — ${money(precio)}`);
       baseDataPromise = null;
-      ensureBaseData().then(() => { renderNuestrosProductos(); refrescarBuscadoresProducto(); });
+      ensureBaseData()
+        .then(() => { try { renderNuestrosProductos(); renderInventario(); refrescarBuscadoresProducto(); } catch (err){ console.warn('Refresco:', err); } })
+        .catch(err => console.warn('Recarga de catálogo:', err));
     } catch (e){ alert('❌ Error guardando la reparación: ' + e.message); if (btn){ btn.disabled = false; btn.textContent = '💾 Crear Producto'; } }
     return;
   }
@@ -4744,7 +4749,7 @@ async function saveEditProducto(cat, recordId){
     flash('adminMsg', `✅ "${esc(nombre)}" actualizado`);
     baseDataPromise = null;
     _esquemasCache[cat] = null;
-    ensureBaseData().then(() => { renderNuestrosProductos(); renderInventario(); refrescarBuscadoresProducto(); });
+    ensureBaseData().then(() => { try { renderNuestrosProductos(); renderInventario(); refrescarBuscadoresProducto(); } catch (err){ console.warn('Refresco:', err); } }).catch(() => {});
   } catch (e){ alert('❌ Error: ' + e.message); btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
 }
 
