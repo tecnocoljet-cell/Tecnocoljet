@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.2.0 - Nuevo segmento Reparaciones en almacen: catalogo de precios por repuesto y tipo de arreglo, no inventariable, disponible en ventas y cotizaciones
+     VERSION: 14.2.1 - Formulario de productos blindado contra campos faltantes y modal que abre en la categoria que se esta viendo
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -4523,6 +4523,8 @@ function openNewProductoModal(){
       <button class="btn" style="flex:1" id="npSaveBtn" onclick="saveNuestroProducto()">💾 Crear Producto</button>
       <button class="btn btn-gris" style="flex:1" onclick="closeOverlay()">Cancelar</button>
     </div>`);
+  const catActual = $('npCategoriaSel')?.value;
+  if (catActual && $('npCategoria')) $('npCategoria').value = catActual;
   renderCamposNuevoProducto();
 }
 
@@ -4562,6 +4564,9 @@ function npExtrasDe(cat){
   });
 }
 
+// Lee un campo del formulario sin romperse si no existe
+function val(id){ const el = $(id); return el ? String(el.value ?? '').trim() : ''; }
+
 function npArmarNombreReparacion(){
   const rep = $('npRepuestoRep')?.value || '';
   const tipo = $('npTipoRep')?.value.trim() || '';
@@ -4600,6 +4605,7 @@ function renderCamposNuevoProducto(){
         <div class="form-group"><label>Precio de la reparación *</label><input type="number" id="npPrecioRep" step="any" min="0" placeholder="0"></div>
       </div>
       <div class="form-group"><label>Repuesto que se repara *</label>
+        ${repuestos.length ? '' : '<p class="msg msg-error" style="margin:0 0 6px">⚠️ Aún no hay repuestos en el catálogo. Crea primero el repuesto.</p>'}
         <select id="npRepuestoRep" onchange="npArmarNombreReparacion()">
           <option value="">-- Selecciona el repuesto --</option>
           ${repuestos.map(p => `<option value="${esc(p.nombre)}">${esc(p.nombre)}${p.codigo ? ' (' + esc(p.codigo) + ')' : ''}</option>`).join('')}
@@ -4631,33 +4637,34 @@ function renderCamposNuevoProducto(){
 async function saveNuestroProducto(){
   const catSel = $('npCategoria').value;
   if (catSel === 'reparaciones'){
-    const repuesto = $('npRepuestoRep').value, tipo = $('npTipoRep').value.trim();
-    const precio = parseFloat($('npPrecioRep').value);
+    const repuesto = val('npRepuestoRep'), tipo = val('npTipoRep');
+    const precio = parseFloat(val('npPrecioRep'));
     if (!repuesto || !tipo){ alert('⚠️ Elige el repuesto y escribe el tipo de reparación'); return; }
     if (isNaN(precio) || precio <= 0){ alert('⚠️ Escribe el precio de la reparación'); return; }
-    const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Guardando...';
+    const btn = $('npSaveBtn'); if (btn){ btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
     try {
+      const nombreRep = val('npNombre') || `Reparación de ${repuesto} — ${tipo}`;
       const fields = {
-        'Código de producto': $('npCodigo').value.trim(),
-        'Nombre del producto': $('npNombre').value,
+        'Código de producto': val('npCodigo'),
+        'Nombre del producto': nombreRep,
         'Repuesto': repuesto, 'Tipo de reparación': tipo,
-        'Precio': precio, 'Observaciones': $('npObsRep').value.trim()
+        'Precio': precio, 'Observaciones': val('npObsRep')
       };
       const res = await npWrite('reparaciones', '', 'POST', { fields });
       (S.npData.reparaciones = S.npData.reparaciones || []).push(res);
       closeOverlay();
-      flash('adminMsg', `✅ Reparación guardada: ${esc($('npNombre').value)} — ${money(precio)}`);
+      flash('adminMsg', `✅ Reparación guardada: ${esc(nombreRep)} — ${money(precio)}`);
       baseDataPromise = null;
       ensureBaseData().then(() => { renderNuestrosProductos(); refrescarBuscadoresProducto(); });
-    } catch (e){ alert('❌ Error: ' + e.message); btn.disabled = false; btn.textContent = '💾 Crear producto'; }
+    } catch (e){ alert('❌ Error guardando la reparación: ' + e.message); if (btn){ btn.disabled = false; btn.textContent = '💾 Crear Producto'; } }
     return;
   }
   const cat = $('npCategoria').value;
-  const nombre = $('npNombre').value.trim();
+  const nombre = val('npNombre');
   if (!nombre){ alert('⚠️ Escribe el nombre'); return; }
-  const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  const btn = $('npSaveBtn'); if (btn){ btn.disabled = true; btn.textContent = '⏳ Creando...'; }
   const fields = { [S.npCampoNombre[cat] || 'Nombre']: nombre };
-  const codVal = $('npCodigo')?.value.trim();
+  const codVal = val('npCodigo');
   if (codVal){ const colCod = S.npCampoCodigo?.[cat] || 'Código'; fields[colCod] = codVal; }
   npExtrasDe(cat).forEach((f, i) => {
     const el = $('npx' + i);
@@ -4712,13 +4719,13 @@ async function openEditProducto(cat, recordId){
 }
 
 async function saveEditProducto(cat, recordId){
-  const nombre = $('epNombre').value.trim();
+  const nombre = val('epNombre');
   if (!nombre){ alert('⚠️ El nombre no puede quedar vacío'); return; }
   const btn = $('epSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Guardando...';
   const nomKey = S.npCampoNombre[cat] || 'Nombre';
   const codKey = S.npCampoCodigo?.[cat] || 'Código';
   const fields = { [nomKey]: nombre };
-  const cod = $('epCodigo').value.trim();
+  const cod = val('epCodigo');
   fields[codKey] = cod;
   (S._epExtras || []).forEach((k, i) => {
     const v = $('epx' + i)?.value.trim();
