@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.1.0 - Ficha del cliente: cotizaciones separadas en listas desplegables por tipo (insumos, repuestos, servicios, equipos, accesorios)
+     VERSION: 14.1.1 - Sello virtual centrado sobre la linea de firma en cotizaciones y reportes
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -2628,7 +2628,7 @@ async function generateReportPDF(reportId, imprimir = false){
   const yf = Math.max(y + 32, 244);
   if (r.receptorFirma){ try { pdf.addImage(r.receptorFirma, 'PNG', 131, yf - 19, 46, 16); } catch (e){} }
   // Sello oficial TECNOCOLJET sobre el lado del técnico (proporción 420x166)
-  try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 36, yf - 22, 34, 18.9); } catch (e){}
+  try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 38, yf - 22, 34, 18.9); } catch (e){}
   pdf.setDrawColor(100); pdf.setLineWidth(0.4);
   pdf.line(20, yf, 90, yf); pdf.line(118, yf, 190, yf);
   pdf.setTextColor(40); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9);
@@ -4211,7 +4211,7 @@ async function generateCotizacionPDF(cotId, imprimir = false, accion = null){
 
     // ── Firma comercial ──
     const yf = Math.max(y + 32, 240);
-    try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 26, yf - 22, 36, 20); } catch (e){}
+    try { pdf.addImage(SELLO_TECNOCOL, 'PNG', 35, yf - 22, 36, 20); } catch (e){}
     pdf.setDrawColor(...NEGRO); pdf.setLineWidth(0.35); pdf.line(18, yf, 88, yf);
     pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...NEGRO); pdf.setFontSize(10);
     pdf.text(r.firmante || r.elaboradoPor || CONFIG.comercial.nombre, 53, yf + 5, { align: 'center' });
