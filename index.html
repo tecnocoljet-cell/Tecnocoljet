@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.0.5 - Cotizacion: sello virtual y firma de quien la elabora en la parte izquierda
+     VERSION: 14.1.0 - Ficha del cliente: cotizaciones separadas en listas desplegables por tipo (insumos, repuestos, servicios, equipos, accesorios)
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -5135,12 +5135,29 @@ async function loadClientDocumentos(clientId){
         `<button class="btn btn-sm" onclick="generateCuentaPDF('${d.id}')">📄</button>
          <button class="btn btn-sm btn-rojo" onclick="deleteCuenta('${d.id}','${r.airtableId || ''}').then(()=>loadClientDocumentos('${clientId}'))">🗑️</button>`);
     });
-    seccion('📋 Cotizaciones', cot.docs, d => {
-      const r = d.data();
-      return filaDoc(`N° ${r.tipo ? cotCodigo(r.numero, r.tipo) : r.numero + 'M'}${r.estado === 'Aprobada' ? ' ✅' : ''} · ${esc(r.motivo || '')}`, money(r.total || 0),
-        `<button class="btn btn-sm" onclick="generateCotizacionPDF('${d.id}')">📄</button>
-         <button class="btn btn-sm btn-rojo" onclick="deleteCotizacion('${d.id}').then(()=>loadClientDocumentos('${clientId}'))">🗑️</button>`);
-    });
+    // Cotizaciones separadas por tipo, en listas desplegables
+    if (cot.docs.length){
+      const TIPOS_COT = { IN: ['🧪', 'Insumos'], RE: ['🔩', 'Repuestos'], SE: ['🛠️', 'Servicios'], EQ: ['🖨️', 'Equipos'], AC: ['🔌', 'Accesorios'] };
+      const filaCot = d => {
+        const r = d.data();
+        return filaDoc(`N° ${r.tipo ? cotCodigo(r.numero, r.tipo) : r.numero + 'M'}${r.estado === 'Aprobada' ? ' ✅' : ''} · ${esc(r.motivo || '')}`, money(r.total || 0),
+          `<button class="btn btn-sm" onclick="generateCotizacionPDF('${d.id}')">📄</button>
+           <button class="btn btn-sm btn-rojo" onclick="deleteCotizacion('${d.id}').then(()=>loadClientDocumentos('${clientId}'))">🗑️</button>`);
+      };
+      const grupos = {};
+      cot.docs.forEach(d => { const t = d.data().tipo || 'OTROS'; (grupos[t] = grupos[t] || []).push(d); });
+      const orden = [...Object.keys(TIPOS_COT).filter(t => grupos[t]), ...Object.keys(grupos).filter(t => !TIPOS_COT[t])];
+      html += `<p style="font-weight:700;font-size:13.5px;color:var(--v-osc);margin:10px 0 4px">📋 Cotizaciones (${cot.docs.length})</p>`;
+      html += orden.map(t => {
+        const [ico, nombre] = TIPOS_COT[t] || ['📄', 'Formato antiguo'];
+        const lista = grupos[t].sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0));
+        return `<details class="desplegable" style="margin-bottom:7px">
+          <summary style="padding:9px 13px;font-size:13.5px">${ico} ${nombre}
+            <span style="color:var(--gris);font-weight:600;font-size:12.5px">· ${lista.length}</span></summary>
+          <div style="padding:9px">${lista.slice(0, 15).map(filaCot).join('')}</div>
+        </details>`;
+      }).join('');
+    }
     box.innerHTML = html || '<p style="color:var(--gris);font-size:13px">Sin remisiones, cuentas ni cotizaciones aún</p>';
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
 }
