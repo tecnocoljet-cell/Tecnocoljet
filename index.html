@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.1.1 - Sello virtual centrado sobre la linea de firma en cotizaciones y reportes
+     VERSION: 14.2.0 - Nuevo segmento Reparaciones en almacen: catalogo de precios por repuesto y tipo de arreglo, no inventariable, disponible en ventas y cotizaciones
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -283,6 +283,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
             <option value="servicios">🛠️ Servicios</option>
             <option value="equipos">🖨️ Equipos</option>
             <option value="accesorios">🔌 Accesorios</option>
+            <option value="reparaciones">🔧 Reparaciones</option>
           </select>
         </div>
         <div class="form-group"><input type="text" id="npBuscar" placeholder="🔍 Buscar producto..." oninput="renderNuestrosProductos()"></div>
@@ -773,6 +774,7 @@ const CONFIG = {
       servicios:  ['Servicios', 'Lista de servicios'],
       equipos:    ['Equipos', 'Lista de equipos'],
       accesorios: ['Accesorios', 'Lista de accesorios'],
+      reparaciones: ['Reparaciones', 'Lista de reparaciones'],
       cuentas:    ['Cuentas de cobro', 'Cuenta de cobro', 'Cuentas de Cobro']
     }
   }
@@ -1012,7 +1014,7 @@ const ts = () => firebase.firestore.Timestamp.now();
    (atFetch / atAll / esquemas). Lee y escribe en las colecciones
    at_* de Firestore que se llenaron durante la migración.
    ============================================================ */
-const AT_COLS = { clientes: 'at_clientes', remisiones: 'at_remisiones', precios: 'at_precios', insumos: 'at_insumos', repuestos: 'at_repuestos', servicios: 'at_servicios', cuentas: 'at_cuentas', equipos: 'cat_equipos', accesorios: 'cat_accesorios' };
+const AT_COLS = { clientes: 'at_clientes', remisiones: 'at_remisiones', precios: 'at_precios', insumos: 'at_insumos', repuestos: 'at_repuestos', servicios: 'at_servicios', cuentas: 'at_cuentas', equipos: 'cat_equipos', accesorios: 'cat_accesorios', reparaciones: 'cat_reparaciones' };
 Object.keys(AT_COLS).forEach(k => { if (!S.tablaResuelta[k]) S.tablaResuelta[k] = CONFIG.airtable.tablas[k][0]; });
 
 const normalizar = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
@@ -1196,7 +1198,7 @@ function refrescarBuscadoresProducto(){
 
 async function loadProductos(){
   // El catálogo de remisiones son las mismas 3 tablas de la pestaña Productos
-  const cats = ['insumos', 'repuestos', 'servicios', 'equipos', 'accesorios'];
+  const cats = ['insumos', 'repuestos', 'servicios', 'equipos', 'accesorios', 'reparaciones'];
   const resultados = await Promise.all(cats.map(c => atAll(c).catch(e => { console.warn('Tabla', c, 'no disponible:', e.message); return []; })));
   S.productos = [];
   for (let i = 0; i < cats.length; i++){
@@ -1239,8 +1241,12 @@ async function loadProductos(){
       });
     });
   }
-  S.productos.forEach(p => { p.soloAlmacen = normalizar(p.nombre) === 'mek'; });
-  S.productosAlmacen = [...S.productos];
+  S.productos.forEach(p => {
+    p.soloAlmacen = normalizar(p.nombre) === 'mek';
+    p.esReparacion = p.categoria === 'reparaciones';
+  });
+  // El inventario no incluye reparaciones (son solo precios de servicio)
+  S.productosAlmacen = S.productos.filter(p => !p.esReparacion);
   S.productos = S.productos.filter(p => !p.soloAlmacen);
   S.productos.sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
   S.productosAlmacen.sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
@@ -2134,7 +2140,7 @@ function filterMateriales(){
   const q = $('matBuscar').value.trim().toLowerCase();
   const box = $('matResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   const matches = buscarParecidos(q,
     S.productos.filter(p => ['insumos', 'repuestos', 'equipos', 'accesorios'].includes(p.categoria)),
     p => `${p.nombre} ${p.codigo}`, 6);
@@ -2709,13 +2715,13 @@ function filterRemProductos(){
   const q = $('remProdBuscar').value.trim().toLowerCase();
   const box = $('remProdResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
   box.innerHTML = matches.map(p => {
     const acordado = precioAcordadoDe(p);
     const precio = acordado ? acordado.precio : (p.precioBase || 0);
     return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addRemProducto('${p.id}')">
-      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}</span>
+      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}${p.esReparacion ? ' <span style="background:#fff0e6;color:var(--naranja);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11px">REPARACIÓN</span>' : ''}</span>
       <strong style="color:var(--v-osc);white-space:nowrap">${precio ? money(precio) : 'sin precio'}${acordado ? ' ⭐' : ''}</strong>
     </div>`;
   }).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
@@ -3439,13 +3445,13 @@ function filterCcProductos(){
   const q = $('ccProdBuscar').value.trim();
   const box = $('ccProdResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
   box.innerHTML = matches.map(p => {
     const acordado = ccAcordadoDe(p);
     const precio = acordado ? acordado.precio : (p.precioBase || 0);
     return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addCcProducto('${p.id}')">
-      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}</span>
+      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}${p.esReparacion ? ' <span style="background:#fff0e6;color:var(--naranja);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11px">REPARACIÓN</span>' : ''}</span>
       <strong style="color:var(--v-osc);white-space:nowrap">${precio ? money(precio) : 'sin precio'}${acordado ? ' ⭐' : ''}</strong>
     </div>`;
   }).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
@@ -3888,11 +3894,11 @@ function filterCotProductos(){
   const q = $('cotProdBuscar').value.trim();
   const box = $('cotProdResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
   box.innerHTML = matches.map(p =>
     `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;gap:6px" onclick="addCotItem('${p.id}')">
-      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}</span>
+      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}${p.esReparacion ? ' <span style="background:#fff0e6;color:var(--naranja);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11px">REPARACIÓN</span>' : ''}</span>
       <strong style="color:var(--v-osc);white-space:nowrap">${(() => { const a = acordadoDe(S.cotPrecios, p); const pr = a ? a.precio : (p.precioBase || 0); return (pr ? money(pr) : 'sin precio') + (a ? ' ⭐' : ''); })()}</strong>
     </div>`
   ).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias — usa "Agregar ítem manual"</p>';
@@ -3902,7 +3908,7 @@ function addCotItem(prodId){
   const p = S.productos.find(x => x.id === prodId);
   if (!p) return;
   const a = acordadoDe(S.cotPrecios, p);
-  S.cotItems.push({ productoId: p.id, referencia: p.codigo || '', descripcion: p.nombre, cantidad: 1, precio: a ? a.precio : (p.precioBase || 0), acordado: !!a });
+  S.cotItems.push({ productoId: p.id, referencia: p.codigo || '', descripcion: p.esReparacion ? `REPARACIÓN — ${p.nombre.replace(/^Reparación de /i, '')}` : p.nombre, esReparacion: !!p.esReparacion, cantidad: 1, precio: a ? a.precio : (p.precioBase || 0), acordado: !!a });
   $('cotProdBuscar').value = ''; $('cotProdResultados').innerHTML = '';
   renderCotItems();
 }
@@ -4264,12 +4270,12 @@ function renderInventario(){
   if (filtro) items = buscarParecidos(filtro, items, p => `${p.nombre} ${p.codigo}`, 999);
   else items = [...items].sort((a, b) => (a.codigo || 'zzz').localeCompare(b.codigo || 'zzz', 'es', { numeric: true }));
   if (!items.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:12px">Sin productos en esta categoría</p>'; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   box.innerHTML = items.map(p => {
     const stock = stockDe(p.id);
     const color = stock > 0 ? 'var(--v-medio)' : (stock === 0 ? '#9ca3af' : 'var(--rojo)');
     return `<div style="display:flex;justify-content:space-between;align-items:center;background:#f9fafb;padding:9px 12px;border-radius:8px;margin-bottom:6px;font-size:14px;border-left:3px solid ${color};gap:8px;flex-wrap:wrap">
-      <span>${iconos[p.categoria]} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}</span>
+      <span>${iconos[p.categoria]} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}${p.esReparacion ? ' <span style="background:#fff0e6;color:var(--naranja);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11px">REPARACIÓN</span>' : ''}</span>
       <span style="display:flex;align-items:center;gap:8px">
         <strong style="color:${color};font-size:16px">${stock}</strong>
         <button class="btn btn-sm" onclick="abrirEntradaInventario('${p.id}')">➕</button>
@@ -4376,7 +4382,7 @@ async function registrarSalidasInventario(productos, origen, origenId){
   const hoy = new Date().toISOString().split('T')[0];
   for (const item of (productos || [])){
     const p = S.productos.find(x => x.id === item.id);
-    if (!p || p.categoria === 'servicios') continue; // los servicios no descuentan stock
+    if (!p || p.categoria === 'servicios' || p.esReparacion) continue; // servicios y reparaciones no descuentan stock
     try {
       await db.collection('inventario_movimientos').add({
         productoId: p.id, nombre: p.nombre, codigo: p.codigo || '',
@@ -4399,7 +4405,7 @@ async function revertirSalidasInventario(origenId){
 /* ============================================================
    14. ADMIN — NUESTROS PRODUCTOS (Insumos / Repuestos / Servicios)
    ============================================================ */
-const NP_TABLAS = { insumos: 'Insumos', repuestos: 'Repuestos', servicios: 'Servicios', equipos: 'Equipos', accesorios: 'Accesorios' };
+const NP_TABLAS = { insumos: 'Insumos', repuestos: 'Repuestos', servicios: 'Servicios', equipos: 'Equipos', accesorios: 'Accesorios', reparaciones: 'Reparaciones' };
 const NP_ICONOS = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️' };
 S.npData = { insumos: [], repuestos: [], servicios: [] };
 S.npCampoNombre = {}; S.npCamposExtra = {}; S.npCampoCodigo = {}; S.npSchema = {};
@@ -4509,6 +4515,7 @@ function openNewProductoModal(){
         <option value="servicios">🛠️ Servicio</option>
         <option value="equipos">🖨️ Equipo</option>
         <option value="accesorios">🔌 Accesorio</option>
+        <option value="reparaciones">🔧 Reparación (solo precio)</option>
       </select>
     </div>
     <div id="npCamposDinamicos"></div>
@@ -4555,6 +4562,13 @@ function npExtrasDe(cat){
   });
 }
 
+function npArmarNombreReparacion(){
+  const rep = $('npRepuestoRep')?.value || '';
+  const tipo = $('npTipoRep')?.value.trim() || '';
+  const campo = $('npNombre');
+  if (campo) campo.value = rep ? `Reparación de ${rep}${tipo ? ' — ' + tipo : ''}` : '';
+}
+
 function renderCamposNuevoProducto(){
   const cat = $('npCategoria').value;
   const campos = npExtrasDe(cat);
@@ -4568,13 +4582,40 @@ function renderCamposNuevoProducto(){
   }).join('');
   // Código consecutivo con prefijo: INS001, REP001, SER001...
   // Se calcula de los registros vivos de la tabla (S.npData), que se actualizan con cada producto creado
-  const PREF = { insumos: 'INS', repuestos: 'REP', servicios: 'SER', equipos: 'EQ', accesorios: 'ACC' };
+  const PREF = { insumos: 'INS', repuestos: 'REP', servicios: 'SER', equipos: 'EQ', accesorios: 'ACC', reparaciones: 'RPR' };
   const codKey = S.npCampoCodigo?.[cat];
   const codigos = (codKey && S.npData?.[cat]?.length)
     ? S.npData[cat].map(r => String(r.fields?.[codKey] ?? ''))
     : (S.productosAlmacen || S.productos || []).filter(p => p.categoria === cat).map(p => String(p.codigo || ''));
   const nums = codigos.map(c => parseInt(c.replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
   const sigCodigo = (PREF[cat] || '') + String(nums.length ? Math.max(...nums) + 1 : 1).padStart(3, '0');
+  // Reparación: se elige el repuesto y el tipo de arreglo; no lleva stock ni imagen
+  if (cat === 'reparaciones'){
+    const repuestos = (S.productosAlmacen || S.productos || []).filter(p => p.categoria === 'repuestos')
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es'));
+    $('npCamposDinamicos').innerHTML = `
+      <div class="info-card">🔧 Las reparaciones no se inventarían: solo guardan el precio del arreglo para usarlo en ventas y cotizaciones.</div>
+      <div class="grid2">
+        <div class="form-group"><label>Código</label><input type="text" id="npCodigo" value="${sigCodigo}"></div>
+        <div class="form-group"><label>Precio de la reparación *</label><input type="number" id="npPrecioRep" step="any" min="0" placeholder="0"></div>
+      </div>
+      <div class="form-group"><label>Repuesto que se repara *</label>
+        <select id="npRepuestoRep" onchange="npArmarNombreReparacion()">
+          <option value="">-- Selecciona el repuesto --</option>
+          ${repuestos.map(p => `<option value="${esc(p.nombre)}">${esc(p.nombre)}${p.codigo ? ' (' + esc(p.codigo) + ')' : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Tipo de reparación *</label>
+        <input type="text" id="npTipoRep" placeholder="Ej: Cambio de sello, limpieza ultrasónica, rebobinado" oninput="npArmarNombreReparacion()">
+      </div>
+      <div class="form-group"><label>Nombre que aparecerá en ventas y cotizaciones</label>
+        <input type="text" id="npNombre" readonly placeholder="Se arma solo con el repuesto y el tipo">
+      </div>
+      <div class="form-group"><label>Observaciones</label><input type="text" id="npObsRep" placeholder="Opcional"></div>`;
+    S._npImg = null;
+    return;
+  }
+
   $('npCamposDinamicos').innerHTML =
     `<div class="grid2">
       <div class="form-group"><label>Código de producto</label><input type="text" id="npCodigo" value="${sigCodigo}"></div>
@@ -4588,6 +4629,29 @@ function renderCamposNuevoProducto(){
 }
 
 async function saveNuestroProducto(){
+  const catSel = $('npCategoria').value;
+  if (catSel === 'reparaciones'){
+    const repuesto = $('npRepuestoRep').value, tipo = $('npTipoRep').value.trim();
+    const precio = parseFloat($('npPrecioRep').value);
+    if (!repuesto || !tipo){ alert('⚠️ Elige el repuesto y escribe el tipo de reparación'); return; }
+    if (isNaN(precio) || precio <= 0){ alert('⚠️ Escribe el precio de la reparación'); return; }
+    const btn = $('npSaveBtn'); btn.disabled = true; btn.textContent = '⏳ Guardando...';
+    try {
+      const fields = {
+        'Código de producto': $('npCodigo').value.trim(),
+        'Nombre del producto': $('npNombre').value,
+        'Repuesto': repuesto, 'Tipo de reparación': tipo,
+        'Precio': precio, 'Observaciones': $('npObsRep').value.trim()
+      };
+      const res = await npWrite('reparaciones', '', 'POST', { fields });
+      (S.npData.reparaciones = S.npData.reparaciones || []).push(res);
+      closeOverlay();
+      flash('adminMsg', `✅ Reparación guardada: ${esc($('npNombre').value)} — ${money(precio)}`);
+      baseDataPromise = null;
+      ensureBaseData().then(() => { renderNuestrosProductos(); refrescarBuscadoresProducto(); });
+    } catch (e){ alert('❌ Error: ' + e.message); btn.disabled = false; btn.textContent = '💾 Crear producto'; }
+    return;
+  }
   const cat = $('npCategoria').value;
   const nombre = $('npNombre').value.trim();
   if (!nombre){ alert('⚠️ Escribe el nombre'); return; }
@@ -5035,7 +5099,7 @@ function filterPaProductos(){
   const q = $('paBuscar').value.trim();
   const box = $('paResultados');
   if (q.length < 2){ box.innerHTML = ''; return; }
-  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌' };
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
   const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 6);
   box.innerHTML = matches.map(p =>
     `<div style="padding:9px;border:1px solid #e5e7eb;border-radius:8px;margin-top:5px;cursor:pointer;background:#fff" onclick="selectPaProducto('${p.id}')">${iconos[p.categoria] || '📦'} ${esc(p.nombre)}${p.codigo ? ' <span style=&quot;color:var(--gris);font-size:12px&quot;>(' + esc(p.codigo) + ')</span>' : ''}</div>`
