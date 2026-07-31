@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.3.0 - Horas del reporte bloqueadas para el empleado y aprobacion que usa los correos guardados del cliente o descarga el PDF
+     VERSION: 14.4.0 - Cuentas de cobro con numeracion propia por cliente y PDF personal sin logo de empresa, con firma del beneficiario
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -359,7 +359,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
       <div class="card">
         <h2 style="margin-bottom:12px">💰 Nueva Cuenta de Cobro</h2>
         <div class="grid2">
-          <div class="form-group"><label>N° de Cuenta</label><input type="text" id="ccNumero" readonly></div>
+          <div class="form-group"><label>N° de Cuenta <span style="color:var(--gris);font-weight:400">(propio de cada cliente)</span></label><input type="text" id="ccNumero" placeholder="0001"><p id="ccNumeroHint" style="font-size:12px;color:var(--gris);margin-top:4px">Elige primero el cliente</p></div>
           <div class="form-group"><label>Quién la elabora *</label><input type="text" id="ccCreador" placeholder="Tu nombre"></div>
         </div>
         <div class="form-group">
@@ -496,6 +496,13 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     </div>
 
     <!-- Respaldo de información (solo cuenta maestra) -->
+    <div class="card hidden" id="firmaCard">
+      <h2 style="margin-bottom:6px">✍️ Mi firma para cuentas de cobro</h2>
+      <p style="color:var(--gris);font-size:13.5px;margin-bottom:12px">La cuenta de cobro es un documento personal, sin logo de la empresa. Sube una foto de tu firma (fondo blanco, preferiblemente PNG recortado) y aparecerá sobre la línea del beneficiario.</p>
+      <div id="firmaPreview" style="margin-bottom:10px"></div>
+      <input type="file" accept="image/*" onchange="subirFirmaPersonal(this)">
+    </div>
+
     <div class="card hidden" id="migCard">
       <h2 style="margin-bottom:6px">📦 Respaldo de información</h2>
       <p style="color:var(--gris);font-size:13.5px;margin-bottom:14px">Toda tu información ya vive en Firebase. Descarga cuando quieras una copia completa en Excel (clientes, catálogo, remisiones, cuentas y cotizaciones) para guardarla en tu computador.</p>
@@ -949,6 +956,50 @@ function limpiarCampos(fields){
 /* ============================================================
    RESPALDO COMPLETO EN EXCEL (solo cuenta maestra)
    ============================================================ */
+/* ============================================================
+   FIRMA PERSONAL para las cuentas de cobro
+   ============================================================ */
+S.firmaPersonal = null;
+
+async function cargarFirmaPersonal(){
+  if (S.firmaPersonal !== null) return S.firmaPersonal;
+  try {
+    const doc = await db.collection('config').doc('firmaPersonal').get();
+    S.firmaPersonal = doc.exists ? (doc.data().imagen || '') : '';
+  } catch (e){ S.firmaPersonal = ''; }
+  return S.firmaPersonal;
+}
+
+async function subirFirmaPersonal(input){
+  if (!input.files?.[0]) return;
+  try {
+    const img = await compressImage(input.files[0], 600, 0.85);
+    await db.collection('config').doc('firmaPersonal').set({ imagen: img, actualizada: ts() });
+    S.firmaPersonal = img;
+    renderFirmaPersonal();
+    alert('✅ Firma guardada. Aparecerá en las cuentas de cobro que generes.');
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function quitarFirmaPersonal(){
+  if (!confirm('¿Quitar tu firma de las cuentas de cobro?')) return;
+  try {
+    await db.collection('config').doc('firmaPersonal').delete();
+    S.firmaPersonal = '';
+    renderFirmaPersonal();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function renderFirmaPersonal(){
+  const box = $('firmaPreview');
+  if (!box) return;
+  await cargarFirmaPersonal();
+  box.innerHTML = S.firmaPersonal
+    ? `<img src="${S.firmaPersonal}" style="max-width:200px;background:#fff;border:1px solid var(--linea);border-radius:9px;padding:8px;display:block;margin-bottom:8px">
+       <button class="btn btn-sm btn-rojo" onclick="quitarFirmaPersonal()">🗑️ Quitar firma</button>`
+    : '<p style="color:var(--gris);font-size:13.5px">Aún no has subido tu firma. Súbela para que aparezca en las cuentas de cobro.</p>';
+}
+
 async function exportarRespaldo(){
   const btn = $('btnExportar');
   btn.disabled = true; btn.textContent = '⏳ Preparando respaldo...';
@@ -1716,8 +1767,9 @@ function selectRole(rol){
   else if (rol === 'almacen'){ showScreen('scr-almacen'); ensureBaseData().then(() => { loadNuestrosProductos(); loadInventario(); ensureMek(); }); }
   else if (rol === 'accesos'){
     showScreen('scr-accesos'); loadUsuarios();
-    const mc = $('migCard');
-    if (mc) mc.classList.toggle('hidden', (S.usuario?.email || '').toLowerCase() !== MASTER_EMAIL.toLowerCase());
+    const esMaster = (S.usuario?.email || '').toLowerCase() === MASTER_EMAIL.toLowerCase();
+    ['migCard', 'firmaCard'].forEach(id => { const el = $(id); if (el) el.classList.toggle('hidden', !esMaster); });
+    if (esMaster) renderFirmaPersonal();
   }
 }
 
@@ -3402,23 +3454,24 @@ async function columnasCuentas(){
   return S._colsCC;
 }
 
+// Cada cliente lleva su propia numeración de cuentas de cobro
 async function loadNextCuentaNumber(){
+  const clientId = S.ccCliente?.id;
+  const campo = $('ccNumero'), hint = $('ccNumeroHint');
+  if (!clientId){
+    if (campo) campo.value = '';
+    if (hint) hint.textContent = 'Elige primero el cliente';
+    return;
+  }
   let ultimo = 0;
   try {
-    const cols = await columnasCuentas();
-    if (cols.codigo){
-      const records = await atAll('cuentas', `fields%5B%5D=${encodeURIComponent(cols.codigo.name)}`);
-      records.forEach(r => {
-        const n = parseInt(String(r.fields[cols.codigo.name] || '').replace(/\D/g, ''));
-        if (!isNaN(n) && n > ultimo) ultimo = n;
-      });
-    }
-  } catch (e){ console.warn('Códigos de cuentas no leídos de Airtable:', e.message); }
-  try {
-    const snap = await db.collection('cuentasCobro').get();
+    const snap = await db.collection('cuentasCobro').where('clientId', '==', clientId).get();
     snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
   } catch (e){}
-  $('ccNumero').value = String((ultimo || 0) + 1).padStart(4, '0');
+  if (campo) campo.value = String((ultimo || 0) + 1).padStart(4, '0');
+  if (hint) hint.textContent = ultimo
+    ? `Última cuenta de este cliente: ${String(ultimo).padStart(4, '0')}`
+    : 'Primera cuenta de este cliente — si ya le llevas otras fuera del sistema, escribe aquí el número que sigue';
 }
 
 function filterCcClientes(){
@@ -3437,6 +3490,7 @@ async function selectCcCliente(id){
   $('ccClienteBuscar').value = ''; $('ccClienteResultados').innerHTML = '';
   $('ccClienteSel').innerHTML = `<div class="info-card"><strong>✅ ${esc(S.ccCliente.name)}</strong><br>NIT: ${esc(S.ccCliente.documento) || '—'} · ${esc(S.ccCliente.ciudad) || '—'}</div>`;
   $('ccProdHint').textContent = '(cargando precios del cliente...)';
+  loadNextCuentaNumber(); // cada cliente tiene su propio consecutivo
   renderCcProductos();
   S.ccPrecios = await loadPreciosCliente(S.ccCliente);
   $('ccProdBuscar').disabled = false;
@@ -3511,7 +3565,8 @@ function renderCcProductos(){
 }
 
 async function createCuentaCobro(){
-  const numero = $('ccNumero').value;
+  const numero = String($('ccNumero').value || '').trim();
+  if (!numero || isNaN(parseInt(numero))){ alert('⚠️ Escribe el número de la cuenta de cobro'); return; }
   const creador = $('ccCreador').value.trim();
   if (!creador){ alert('⚠️ Escribe quién elabora la cuenta'); return; }
   if (!S.ccCliente){ alert('⚠️ Selecciona un cliente'); return; }
@@ -3712,18 +3767,15 @@ async function generateCuentaPDF(cuentaId, imprimir = false, copias = 1){
     const W = pdf.internal.pageSize.getWidth();
     const VERDE = [107, 168, 62], VERDE_OSC = [56, 96, 32], GRIS = [120, 126, 134], NEGRO = [35, 38, 42];
     const fecha = r.createdAt ? r.createdAt.toDate() : new Date();
+    await cargarFirmaPersonal();
 
     const dibujar = () => {
-    // ── Membrete ──
-    try { pdf.addImage(LOGO_TECNOCOL, 'JPEG', 14, 12, 50, 21.2); } catch (e){}
-    pdf.setTextColor(...GRIS); pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
-    pdf.text(`NIT ${CONFIG.empresa.nit}  ·  ${CONFIG.empresa.ciudad}`, 14, 38);
-    // Título a la derecha
+    // ── Membrete personal (documento a nombre del beneficiario, sin logo de empresa) ──
     pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17);
-    pdf.text('CUENTA DE COBRO', W - 14, 22, { align: 'right' });
+    pdf.text('CUENTA DE COBRO', 14, 22);
     pdf.setFontSize(10.5); pdf.setTextColor(...GRIS); pdf.setFont('helvetica', 'normal');
-    pdf.text('Referencia N° ' + String(r.numero).padStart(4, '0'), W - 14, 29, { align: 'right' });
-    pdf.text(`Bogotá D.C., ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`, W - 14, 35, { align: 'right' });
+    pdf.text('Referencia N° ' + String(r.numero).padStart(4, '0'), 14, 29);
+    pdf.text(`Bogotá D.C., ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`, 14, 35);
     // Doble línea del membrete
     pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.4); pdf.line(14, 43, W - 14, 43);
     pdf.setLineWidth(0.3); pdf.line(14, 45, W - 14, 45);
@@ -3814,6 +3866,9 @@ async function generateCuentaPDF(cuentaId, imprimir = false, copias = 1){
 
     // ── Firmas ──
     const yf = Math.max(y + 42, 244);
+    if (S.firmaPersonal){
+      try { pdf.addImage(S.firmaPersonal, S.firmaPersonal.startsWith('data:image/png') ? 'PNG' : 'JPEG', 33, yf - 20, 44, 18); } catch (e){}
+    }
     pdf.setDrawColor(...NEGRO); pdf.setLineWidth(0.35);
     pdf.line(20, yf, 90, yf); pdf.line(120, yf, 190, yf);
     pdf.setTextColor(...NEGRO); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5);
