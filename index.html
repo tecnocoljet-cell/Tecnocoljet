@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 15.0.0 - Ventas informales: clientes informales con precios propios, consecutivo por cliente y descuento de inventario
+     VERSION: 15.1.0 - Modulo de Contratos en Administrador: venta de equipo bajo contrato y alquiler, con PDF de contrato completo
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -725,6 +725,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
       <button class="tab active" id="tab-reportes" onclick="switchAdminTab('reportes')">📋 Reportes</button>
       <button class="tab" id="tab-entregas" onclick="switchAdminTab('entregas')">🚚 Entregas</button>
       <button class="tab" id="tab-clientes" onclick="switchAdminTab('clientes')">👥 Clientes</button>
+      <button class="tab" id="tab-contratos" onclick="switchAdminTab('contratos')">📜 Contratos</button>
     </div>
 
     <!-- TAB REPORTES -->
@@ -744,6 +745,58 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
           <button class="btn btn-sm btn-outline" style="float:right" onclick="loadEvidencias()">🔄 Actualizar</button>
         </h2>
         <div id="evidenciasList"><p style="color:var(--gris);font-size:14px">Remisiones ya entregadas o no entregadas, con su información y la foto de evidencia.</p></div>
+      </div>
+    </div>
+
+    <!-- TAB CONTRATOS -->
+    <div id="tabc-contratos" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">📜 Nuevo Contrato</h2>
+        <div class="grid2">
+          <div class="form-group"><label>Tipo de contrato *</label>
+            <select id="ctTipo" onchange="renderCamposContrato()">
+              <option value="venta">🛒 Venta de equipo bajo contrato</option>
+              <option value="alquiler">🔄 Alquiler de equipo</option>
+            </select>
+          </div>
+          <div class="form-group"><label>N° de contrato</label><input type="text" id="ctNumero" readonly></div>
+        </div>
+        <div class="form-group"><label>Cliente *</label>
+          <input type="text" id="ctClienteBuscar" placeholder="Busca el cliente..." oninput="filterCtClientes()">
+          <button class="btn btn-sm btn-outline" type="button" style="margin-top:6px" onclick="mostrarListaClientes('ct')">📋 Ver lista de clientes</button>
+          <div id="ctClienteResultados"></div>
+          <div id="ctClienteSel"></div>
+        </div>
+        <div class="form-group"><label>Representante del cliente (quien firma) *</label>
+          <input type="text" id="ctRepresentante" placeholder="Nombre completo">
+        </div>
+        <div class="grid2">
+          <div class="form-group"><label>Cédula del representante</label><input type="text" id="ctRepCedula" placeholder="C.C."></div>
+          <div class="form-group"><label>Ciudad de firma</label><input type="text" id="ctCiudad" value="Bogotá D.C."></div>
+        </div>
+
+        <h3 style="margin:14px 0 8px;color:var(--v-osc)">🖨️ Equipo objeto del contrato</h3>
+        <div class="form-group"><label>Equipo *</label>
+          <input type="text" id="ctEquipoBuscar" placeholder="Busca en tu catálogo de equipos..." oninput="filterCtEquipos()">
+          <div id="ctEquipoResultados"></div>
+        </div>
+        <div class="grid2">
+          <div class="form-group"><label>Descripción del equipo *</label><input type="text" id="ctEquipo" placeholder="Marca, modelo"></div>
+          <div class="form-group"><label>Serie / identificación</label><input type="text" id="ctSerie" placeholder="N° de serie"></div>
+        </div>
+
+        <div id="ctCamposDinamicos"></div>
+
+        <div class="form-group"><label>🗒️ Cláusulas adicionales <span style="color:var(--gris);font-weight:400">(opcional, una por línea)</span></label>
+          <textarea id="ctClausulas" placeholder="Ej: El mantenimiento preventivo se realizará cada 3 meses."></textarea>
+        </div>
+        <button class="btn btn-block" id="btnCrearContrato" onclick="crearContrato()">📜 Crear Contrato</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Contratos Creados
+          <select id="mesCt" style="padding:7px 10px;border:1.5px solid var(--linea);border-radius:8px;font-size:13px;font-weight:600;color:var(--v-prof)" onchange="S.mesVista['ct']=this.value;loadContratos()"></select>
+        </h2>
+        <div id="contratosList" class="loading">Cargando...</div>
       </div>
     </div>
 
@@ -1485,7 +1538,8 @@ const PICKERS_CLIENTE = {
   rep: { res: 'repClienteResultados', sel: 'selectRepCliente' },
   rem: { res: 'remClienteResultados', sel: 'selectRemCliente' },
   cc:  { res: 'ccClienteResultados',  sel: 'selectCcCliente' },
-  cot: { res: 'cotClienteResultados', sel: 'selectCotCliente' }
+  cot: { res: 'cotClienteResultados', sel: 'selectCotCliente' },
+  ct:  { res: 'ctClienteResultados',  sel: 'selectCtCliente' }
 };
 async function mostrarListaClientes(pref){
   const cfg = PICKERS_CLIENTE[pref];
@@ -1843,13 +1897,14 @@ function ensureBaseData(){
 }
 
 function switchAdminTab(tab){
-  ['reportes', 'entregas', 'clientes'].forEach(t => {
+  ['reportes', 'entregas', 'clientes', 'contratos'].forEach(t => {
     $('tab-' + t).classList.toggle('active', t === tab);
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'reportes') loadPendingReports();
   if (tab === 'entregas') loadEvidencias();
   if (tab === 'clientes'){ loadClientesTab(); cargarClientesInformales().then(renderClientesInformales); }
+  if (tab === 'contratos'){ ensureBaseData().then(() => { renderCamposContrato(); loadNextContratoNumber(); loadContratos(); }); }
 }
 
 /* ============================================================
@@ -2137,6 +2192,273 @@ async function verVentasCliente(clienteId){
         </div>`).join('') : '<p style="color:var(--gris)">Sin ventas registradas.</p>'}
       <button class="btn btn-gris btn-block" style="margin-top:12px" onclick="closeOverlay()">Cerrar</button>`);
   } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+/* ============================================================
+   CONTRATOS (venta bajo contrato / alquiler de equipo)
+   ============================================================ */
+S.ctCliente = null;
+
+function renderCamposContrato(){
+  const tipo = $('ctTipo')?.value || 'venta';
+  const hoy = new Date().toISOString().split('T')[0];
+  $('ctCamposDinamicos').innerHTML = tipo === 'venta'
+    ? `<h3 style="margin:14px 0 8px;color:var(--v-osc)">💰 Condiciones de la venta</h3>
+       <div class="grid2">
+         <div class="form-group"><label>Valor total *</label><input type="number" id="ctValor" step="any" min="0" placeholder="0"></div>
+         <div class="form-group"><label>Cuota inicial</label><input type="number" id="ctInicial" step="any" min="0" placeholder="0"></div>
+       </div>
+       <div class="grid2">
+         <div class="form-group"><label>Número de cuotas</label><input type="number" id="ctCuotas" min="1" value="1"></div>
+         <div class="form-group"><label>Día de pago de cada cuota</label><input type="text" id="ctDiaPago" placeholder="Ej: los días 5 de cada mes"></div>
+       </div>
+       <div class="grid2">
+         <div class="form-group"><label>Fecha de entrega</label><input type="date" id="ctFechaInicio" value="${hoy}"></div>
+         <div class="form-group"><label>Garantía (meses)</label><input type="number" id="ctGarantia" min="0" value="12"></div>
+       </div>`
+    : `<h3 style="margin:14px 0 8px;color:var(--v-osc)">🔄 Condiciones del alquiler</h3>
+       <div class="grid2">
+         <div class="form-group"><label>Canon mensual *</label><input type="number" id="ctValor" step="any" min="0" placeholder="0"></div>
+         <div class="form-group"><label>Depósito / garantía</label><input type="number" id="ctDeposito" step="any" min="0" placeholder="0"></div>
+       </div>
+       <div class="grid2">
+         <div class="form-group"><label>Duración (meses) *</label><input type="number" id="ctMeses" min="1" value="12"></div>
+         <div class="form-group"><label>Día de pago del canon</label><input type="text" id="ctDiaPago" placeholder="Ej: los días 5 de cada mes"></div>
+       </div>
+       <div class="grid2">
+         <div class="form-group"><label>Inicio del alquiler</label><input type="date" id="ctFechaInicio" value="${hoy}"></div>
+         <div class="form-group"><label>Mantenimientos incluidos al año</label><input type="number" id="ctMantenimientos" min="0" value="4"></div>
+       </div>`;
+}
+
+function filterCtClientes(){
+  const q = val('ctClienteBuscar').toLowerCase();
+  const box = $('ctClienteResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const matches = buscarParecidos(q, Object.values(S.clientes), c => c.name, 6);
+  box.innerHTML = matches.map(c => `<div style="padding:10px;border:1px solid var(--linea);border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectCtCliente('${c.id}')">🏢 <strong>${esc(c.name)}</strong></div>`).join('')
+    || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+function selectCtCliente(id){
+  S.ctCliente = S.clientes[id];
+  $('ctClienteBuscar').value = ''; $('ctClienteResultados').innerHTML = '';
+  $('ctClienteSel').innerHTML = `<div class="info-card"><strong>✅ ${esc(S.ctCliente.name)}</strong><br>NIT: ${esc(S.ctCliente.documento) || '—'} · ${esc(S.ctCliente.ciudad) || '—'}</div>`;
+}
+
+function filterCtEquipos(){
+  const q = val('ctEquipoBuscar').toLowerCase();
+  const box = $('ctEquipoResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const equipos = S.productos.filter(p => p.categoria === 'equipos');
+  const matches = buscarParecidos(q, equipos, p => `${p.nombre} ${p.codigo}`, 6);
+  box.innerHTML = matches.map(p => `<div style="padding:10px;border:1px solid var(--linea);border-radius:8px;margin-top:6px;cursor:pointer;background:#fff" onclick="selectCtEquipo('${p.id}')">🖨️ <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-size:11.5px;font-weight:700">${esc(p.codigo)}</span>` : ''}</div>`).join('')
+    || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin equipos con ese nombre — puedes escribirlo abajo</p>';
+}
+
+function selectCtEquipo(id){
+  const p = S.productos.find(x => x.id === id);
+  if (!p) return;
+  $('ctEquipo').value = p.nombre;
+  $('ctEquipoBuscar').value = ''; $('ctEquipoResultados').innerHTML = '';
+  const v = $('ctValor');
+  if (v && !v.value && p.precioBase) v.value = p.precioBase;
+}
+
+async function loadNextContratoNumber(){
+  let ultimo = 0;
+  try {
+    const snap = await db.collection('contratos').get();
+    snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
+  } catch (e){}
+  const campo = $('ctNumero');
+  if (campo) campo.value = String(ultimo + 1).padStart(4, '0');
+}
+
+async function crearContrato(){
+  if (!S.ctCliente){ alert('⚠️ Selecciona el cliente'); return; }
+  const representante = val('ctRepresentante');
+  const equipo = val('ctEquipo');
+  const valor = parseFloat(val('ctValor'));
+  if (!representante){ alert('⚠️ Escribe el nombre de quien firma por el cliente'); return; }
+  if (!equipo){ alert('⚠️ Describe el equipo'); return; }
+  if (isNaN(valor) || valor <= 0){ alert('⚠️ Escribe el valor del contrato'); return; }
+  const tipo = $('ctTipo').value;
+  const btn = $('btnCrearContrato'); btn.disabled = true; btn.textContent = '⏳ Creando...';
+  try {
+    const contrato = {
+      numero: parseInt(val('ctNumero')), tipo,
+      clientId: S.ctCliente.id, clientName: S.ctCliente.name,
+      clientDocumento: S.ctCliente.documento || '', clientDireccion: S.ctCliente.direccion || '',
+      representante, repCedula: val('ctRepCedula'), ciudad: val('ctCiudad') || 'Bogotá D.C.',
+      equipo, serie: val('ctSerie'), valor,
+      inicial: parseFloat(val('ctInicial')) || 0,
+      cuotas: parseInt(val('ctCuotas')) || 1,
+      deposito: parseFloat(val('ctDeposito')) || 0,
+      meses: parseInt(val('ctMeses')) || 0,
+      diaPago: val('ctDiaPago'), garantia: parseInt(val('ctGarantia')) || 0,
+      mantenimientos: parseInt(val('ctMantenimientos')) || 0,
+      fechaInicio: val('ctFechaInicio'),
+      clausulasExtra: val('ctClausulas'),
+      elaboradoPor: S.perfilNombre || S.usuario?.email || '', createdAt: ts()
+    };
+    const docRef = await db.collection('contratos').add(contrato);
+    flash('adminMsg', `✅ Contrato N° ${String(contrato.numero).padStart(4, '0')} creado`);
+    ['ctRepresentante','ctRepCedula','ctEquipo','ctSerie','ctClausulas'].forEach(id => { if ($(id)) $(id).value = ''; });
+    S.ctCliente = null; $('ctClienteSel').innerHTML = '';
+    renderCamposContrato(); loadNextContratoNumber(); loadContratos();
+    await generateContratoPDF(docRef.id);
+  } catch (e){ alert('❌ Error: ' + e.message); }
+  btn.disabled = false; btn.textContent = '📜 Crear Contrato';
+}
+
+async function loadContratos(){
+  const box = $('contratosList');
+  if (!box) return;
+  box.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const snap = await db.collection('contratos').get();
+    llenarSelectorMes('mesCt', 'ct', snap.docs.map(d => isoDe(d.data().createdAt).slice(0, 7)));
+    const docs = snap.docs.filter(d => filtroMes('ct', isoDe(d.data().createdAt)))
+      .sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 60);
+    if (!docs.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin contratos este mes</p>'; return; }
+    box.innerHTML = docs.map(d => {
+      const c = d.data();
+      const esVenta = c.tipo === 'venta';
+      return `<div class="item-card" style="border-left-color:${esVenta ? 'var(--v-medio)' : 'var(--naranja)'}">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <strong>N° ${String(c.numero).padStart(4, '0')} · ${esc(c.clientName)}</strong>
+          <span class="badge ${esVenta ? 'badge-ok' : 'badge-pend'}">${esVenta ? '🛒 Venta' : '🔄 Alquiler'}</span>
+        </div>
+        <p style="font-size:13px;color:var(--gris);margin-top:5px">🖨️ ${esc(c.equipo)}${c.serie ? ' · Serie ' + esc(c.serie) : ''}</p>
+        <p style="font-size:13px;margin-top:3px"><strong style="color:var(--v-osc)">${money(c.valor)}</strong>${esVenta ? ` · ${c.cuotas} cuota(s)` : ' /mes · ' + c.meses + ' meses'}</p>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-azul" onclick="generateContratoPDF('${d.id}')">📄 PDF</button>
+          <button class="btn btn-sm btn-rojo" onclick="eliminarContrato('${d.id}')">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function eliminarContrato(id){
+  if (!confirm('¿Eliminar este contrato?')) return;
+  try {
+    await db.collection('contratos').doc(id).delete();
+    flash('adminMsg', '🗑️ Contrato eliminado');
+    loadContratos(); loadNextContratoNumber();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function generateContratoPDF(id){
+  try {
+    const snap = await db.collection('contratos').doc(id).get();
+    if (!snap.exists) throw new Error('Contrato no encontrado');
+    const c = snap.data();
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const W = pdf.internal.pageSize.getWidth();
+    const VERDE = [107, 168, 62], VERDE_OSC = [56, 96, 32], GRIS = [120, 126, 134], NEGRO = [35, 38, 42];
+    const E = CONFIG.empresa, B = CONFIG.beneficiario;
+    const esVenta = c.tipo === 'venta';
+    const fIni = c.fechaInicio ? new Date(c.fechaInicio + 'T12:00:00') : new Date();
+    const fmt = f => f.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // Membrete
+    try { pdf.addImage(LOGO_TECNOCOL, 'JPEG', 14, 12, 46, 19.5); } catch (e){}
+    pdf.setTextColor(...GRIS); pdf.setFontSize(8);
+    pdf.text(`NIT ${E.nit}  ·  ${E.ciudad}`, 14, 35);
+    pdf.setTextColor(...VERDE_OSC); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13);
+    pdf.text(esVenta ? 'CONTRATO DE COMPRAVENTA' : 'CONTRATO DE ARRENDAMIENTO', W - 14, 20, { align: 'right' });
+    pdf.setFontSize(11); pdf.setTextColor(...GRIS); pdf.setFont('helvetica', 'normal');
+    pdf.text('DE EQUIPO INDUSTRIAL', W - 14, 26, { align: 'right' });
+    pdf.text('N° ' + String(c.numero).padStart(4, '0'), W - 14, 33, { align: 'right' });
+    pdf.setDrawColor(...VERDE); pdf.setLineWidth(1.2); pdf.line(14, 40, W - 14, 40);
+    pdf.setLineWidth(0.3); pdf.line(14, 41.8, W - 14, 41.8);
+
+    let y = 50;
+    const parrafo = (txt, size = 9.5, bold = false) => {
+      pdf.setFont('helvetica', bold ? 'bold' : 'normal'); pdf.setFontSize(size); pdf.setTextColor(...NEGRO);
+      const lineas = pdf.splitTextToSize(txt, W - 28);
+      if (y + lineas.length * 4.6 > 272){ pdf.addPage(); y = 22; }
+      pdf.text(lineas, 14, y);
+      y += lineas.length * 4.6 + 2.5;
+    };
+    const titulo = txt => {
+      if (y + 10 > 272){ pdf.addPage(); y = 22; }
+      y += 2.5;
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); pdf.setTextColor(...VERDE_OSC);
+      pdf.text(txt, 14, y); y += 5.5;
+    };
+
+    // Comparecientes
+    parrafo(`Entre los suscritos a saber: ${E.nombre}, sociedad legalmente constituida, identificada con NIT ${E.nit}, con domicilio en ${E.ciudad}, representada por ${B.nombre}, mayor de edad, identificado con cédula de ciudadanía ${B.cc}, quien en adelante se denominará ${esVenta ? 'EL VENDEDOR' : 'EL ARRENDADOR'}; y ${String(c.clientName).toUpperCase()}, identificado con NIT/C.C. ${c.clientDocumento || '____________'}${c.clientDireccion ? `, con domicilio en ${c.clientDireccion}` : ''}, representado por ${String(c.representante).toUpperCase()}, identificado con cédula de ciudadanía ${c.repCedula || '____________'}, quien en adelante se denominará ${esVenta ? 'EL COMPRADOR' : 'EL ARRENDATARIO'}; hemos convenido celebrar el presente contrato, que se regirá por las siguientes cláusulas:`);
+
+    let n = 1;
+    titulo(`PRIMERA — OBJETO`);
+    parrafo(esVenta
+      ? `EL VENDEDOR transfiere a título de venta a EL COMPRADOR, quien adquiere, el siguiente equipo: ${c.equipo}${c.serie ? `, identificado con serie ${c.serie}` : ''}.`
+      : `EL ARRENDADOR entrega a EL ARRENDATARIO, a título de arrendamiento, el siguiente equipo: ${c.equipo}${c.serie ? `, identificado con serie ${c.serie}` : ''}. El equipo continúa siendo propiedad exclusiva de EL ARRENDADOR.`);
+
+    titulo('SEGUNDA — VALOR Y FORMA DE PAGO');
+    if (esVenta){
+      const saldo = c.valor - (c.inicial || 0);
+      parrafo(`El valor total del equipo es de ${money(c.valor)} (${numeroALetras(c.valor)}).` +
+        (c.inicial ? ` EL COMPRADOR pagará una cuota inicial de ${money(c.inicial)}, y el saldo de ${money(saldo)}` : ' Dicho valor será pagado') +
+        ` en ${c.cuotas} cuota(s)${c.cuotas > 1 ? ` de ${money(Math.round(saldo / c.cuotas))} cada una` : ''}${c.diaPago ? `, pagaderas ${c.diaPago}` : ''}.`);
+    } else {
+      parrafo(`EL ARRENDATARIO pagará un canon mensual de ${money(c.valor)} (${numeroALetras(c.valor)})${c.diaPago ? `, ${c.diaPago}` : ''}.` +
+        (c.deposito ? ` Adicionalmente entregará un depósito de ${money(c.deposito)}, reembolsable al finalizar el contrato siempre que el equipo se devuelva en buen estado.` : ''));
+    }
+
+    titulo('TERCERA — DURACIÓN Y ENTREGA');
+    parrafo(esVenta
+      ? `El equipo será entregado el ${fmt(fIni)} en el domicilio indicado por EL COMPRADOR. La propiedad se transfiere con el pago total del valor pactado.`
+      : `El contrato tendrá una duración de ${c.meses} meses contados a partir del ${fmt(fIni)}, prorrogable por acuerdo escrito entre las partes.`);
+
+    titulo(esVenta ? 'CUARTA — GARANTÍA' : 'CUARTA — MANTENIMIENTO');
+    parrafo(esVenta
+      ? `EL VENDEDOR otorga una garantía de ${c.garantia} meses sobre defectos de fabricación, contados desde la entrega. La garantía no cubre daños por uso indebido, manipulación por terceros no autorizados, sobretensiones eléctricas ni insumos no suministrados por EL VENDEDOR.`
+      : `EL ARRENDADOR realizará ${c.mantenimientos} mantenimiento(s) preventivo(s) al año, incluidos en el canon. Las reparaciones por uso indebido o manipulación no autorizada serán asumidas por EL ARRENDATARIO.`);
+
+    titulo('QUINTA — OBLIGACIONES DE LAS PARTES');
+    parrafo(esVenta
+      ? `EL VENDEDOR se obliga a entregar el equipo en perfecto estado de funcionamiento y a brindar capacitación básica de operación. EL COMPRADOR se obliga a pagar el precio en los plazos pactados y a dar al equipo el uso adecuado según las especificaciones técnicas.`
+      : `EL ARRENDADOR se obliga a entregar el equipo en perfecto estado y a garantizar su funcionamiento durante la vigencia del contrato. EL ARRENDATARIO se obliga a pagar el canon oportunamente, a custodiar el equipo, a no cederlo ni subarrendarlo, y a permitir las visitas técnicas de mantenimiento.`);
+
+    titulo('SEXTA — INCUMPLIMIENTO');
+    parrafo(esVenta
+      ? `El incumplimiento en el pago de dos (2) cuotas consecutivas facultará a EL VENDEDOR para exigir el pago total del saldo o para restituir el equipo, sin perjuicio de las acciones legales correspondientes.`
+      : `La mora en el pago de dos (2) cánones consecutivos dará derecho a EL ARRENDADOR a dar por terminado el contrato y a exigir la devolución inmediata del equipo, sin perjuicio del cobro de los valores adeudados.`);
+
+    if (c.clausulasExtra){
+      titulo('SÉPTIMA — CLÁUSULAS ADICIONALES');
+      c.clausulasExtra.split('\n').filter(l => l.trim()).forEach(l => parrafo('• ' + l.trim()));
+    }
+
+    titulo((c.clausulasExtra ? 'OCTAVA' : 'SÉPTIMA') + ' — LEY APLICABLE');
+    parrafo(`El presente contrato se rige por las leyes de la República de Colombia. Las diferencias que surjan se resolverán de común acuerdo entre las partes y, de no lograrse, ante la justicia ordinaria.`);
+
+    parrafo(`Para constancia se firma en ${c.ciudad}, a los ${fmt(new Date())}, en dos ejemplares del mismo tenor.`);
+
+    // Firmas
+    const yf = Math.max(y + 30, 246);
+    if (y + 40 > 272){ pdf.addPage(); }
+    pdf.setDrawColor(...NEGRO); pdf.setLineWidth(0.35);
+    pdf.line(20, yf, 90, yf); pdf.line(120, yf, 190, yf);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5); pdf.setTextColor(...NEGRO);
+    pdf.text(B.nombre, 55, yf + 5, { align: 'center' });
+    pdf.text(String(c.representante).toUpperCase(), 155, yf + 5, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); pdf.setTextColor(...GRIS);
+    pdf.text(esVenta ? 'EL VENDEDOR' : 'EL ARRENDADOR', 55, yf + 10, { align: 'center' });
+    pdf.text(`${E.nombre} · NIT ${E.nit}`, 55, yf + 14.5, { align: 'center' });
+    pdf.text(esVenta ? 'EL COMPRADOR' : 'EL ARRENDATARIO', 155, yf + 10, { align: 'center' });
+    pdf.text(`C.C. ${c.repCedula || '____________'}`, 155, yf + 14.5, { align: 'center' });
+
+    const filename = `CONTRATO_${esVenta ? 'VENTA' : 'ALQUILER'}_${String(c.numero).padStart(4, '0')}_${String(c.clientName).replace(/\s+/g, '_')}.pdf`.toUpperCase();
+    pdf.save(filename);
+    return filename;
+  } catch (e){ alert('❌ Error generando el contrato: ' + e.message); }
 }
 
 async function loadClientesTab(){
