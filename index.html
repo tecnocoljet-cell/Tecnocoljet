@@ -2,7 +2,7 @@
 <html lang="es">
 <!-- ============================================================
      TECNOCOLJET S.A.S. - Sistema Operativo Empresarial
-     VERSION: 14.4.0 - Cuentas de cobro con numeracion propia por cliente y PDF personal sin logo de empresa, con firma del beneficiario
+     VERSION: 15.0.0 - Ventas informales: clientes informales con precios propios, consecutivo por cliente y descuento de inventario
      Arquitectura: 1 archivo | Firebase (Auth + Firestore) como unica base de datos
      ============================================================ -->
 <head>
@@ -300,6 +300,38 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
       <button class="tab active" id="tab-remisiones" onclick="switchVentasTab('remisiones')">📦 Remisiones</button>
       <button class="tab" id="tab-cuentas" onclick="switchVentasTab('cuentas')">💰 Ctas. Cobro</button>
       <button class="tab" id="tab-cotizaciones" onclick="switchVentasTab('cotizaciones')">📋 Cotizaciones</button>
+      <button class="tab" id="tab-informal" onclick="switchVentasTab('informal')">🧾 Informal</button>
+    </div>
+
+    <!-- TAB VENTA INFORMAL -->
+    <div id="tabc-informal" class="hidden">
+      <div class="card">
+        <h2 style="margin-bottom:12px">🧾 Nueva Venta Informal</h2>
+        <p style="color:var(--gris);font-size:13.5px;margin-bottom:14px">Venta rápida de una o pocas unidades. Descuenta del inventario y lleva su propio consecutivo por cliente.</p>
+        <div class="grid2">
+          <div class="form-group"><label>Cliente informal *</label>
+            <select id="viCliente" onchange="viSeleccionarCliente()">
+              <option value="">-- Selecciona --</option>
+            </select>
+          </div>
+          <div class="form-group"><label>N° de venta con este cliente</label>
+            <input type="text" id="viNumero" placeholder="0001">
+            <p id="viNumeroHint" style="font-size:12px;color:var(--gris);margin-top:4px">Elige primero el cliente</p>
+          </div>
+        </div>
+        <div class="form-group"><label>🛒 Producto <span id="viProdHint" style="color:var(--gris);font-weight:400">(busca por nombre o código)</span></label>
+          <input type="text" id="viProdBuscar" placeholder="Escribe el producto..." oninput="filterViProductos()">
+          <div id="viProdResultados"></div>
+        </div>
+        <div id="viProductos"></div>
+        <button class="btn btn-block" id="btnCrearVi" onclick="crearVentaInformal()">🧾 Registrar Venta</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:12px">🗂️ Ventas Informales
+          <select id="mesVi" style="padding:7px 10px;border:1.5px solid var(--linea);border-radius:8px;font-size:13px;font-weight:600;color:var(--v-prof)" onchange="S.mesVista['vi']=this.value;loadVentasInformales()"></select>
+        </h2>
+        <div id="viList" class="loading">Cargando...</div>
+      </div>
     </div>
     <!-- TAB REMISIONES -->
     <div id="tabc-remisiones" class="hidden">
@@ -716,6 +748,20 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     </div>
 
     <div id="tabc-clientes" class="hidden">
+      <div class="card">
+        <details class="desplegable">
+          <summary>🧾 Clientes informales <span id="ciContador" style="color:var(--gris);font-weight:600;font-size:13px"></span></summary>
+          <div style="padding:14px 2px 2px">
+            <p style="color:var(--gris);font-size:13.5px;margin-bottom:12px">Clientes que compran una que otra unidad. Solo se registran sus precios y sus ventas.</p>
+            <div class="grid2">
+              <div class="form-group"><label>Nombre *</label><input type="text" id="ciNombre" placeholder="Nombre o negocio"></div>
+              <div class="form-group"><label>Teléfono</label><input type="text" id="ciTelefono" placeholder="Opcional"></div>
+            </div>
+            <button class="btn btn-sm" onclick="crearClienteInformal()">➕ Agregar cliente informal</button>
+            <div id="ciList" style="margin-top:14px"></div>
+          </div>
+        </details>
+      </div>
       <div class="card">
         <h2 style="margin-bottom:12px">👥 Gestión de Clientes
           <button class="btn btn-sm" style="float:right" onclick="openNewClientModal()">➕ Nuevo Cliente</button>
@@ -1774,13 +1820,14 @@ function selectRole(rol){
 }
 
 function switchVentasTab(tab){
-  ['remisiones', 'cuentas', 'cotizaciones'].forEach(t => {
+  ['remisiones', 'cuentas', 'cotizaciones', 'informal'].forEach(t => {
     $('tab-' + t).classList.toggle('active', t === tab);
     $('tabc-' + t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'remisiones'){ ensureBaseData().then(async () => { await loadCreatedRemisiones(); loadNextRemisionNumber(); loadEvidencias(); }); }
   if (tab === 'cuentas'){ ensureBaseData().then(async () => { await loadCuentasCreadas(); loadNextCuentaNumber(); }); }
   if (tab === 'cotizaciones'){ ensureBaseData().then(async () => { await loadCotizaciones(); loadNextCotizacionNumber(); }); }
+  if (tab === 'informal'){ ensureBaseData().then(async () => { await cargarClientesInformales(); loadVentasInformales(); }); }
 }
 
 let baseDataPromise = null;
@@ -1802,7 +1849,294 @@ function switchAdminTab(tab){
   });
   if (tab === 'reportes') loadPendingReports();
   if (tab === 'entregas') loadEvidencias();
-  if (tab === 'clientes') loadClientesTab();
+  if (tab === 'clientes'){ loadClientesTab(); cargarClientesInformales().then(renderClientesInformales); }
+}
+
+/* ============================================================
+   VENTAS INFORMALES
+   Clientes que compran pocas unidades: solo precio y ventas.
+   Colecciones: 'clientes_informales' y 'ventas_informales'.
+   ============================================================ */
+S.clientesInformales = [];
+S.viProductos = [];
+
+async function cargarClientesInformales(){
+  try {
+    const snap = await db.collection('clientes_informales').get();
+    S.clientesInformales = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es'));
+  } catch (e){ S.clientesInformales = []; console.warn('Clientes informales:', e.message); }
+  const sel = $('viCliente');
+  if (sel){
+    const actual = sel.value;
+    sel.innerHTML = '<option value="">-- Selecciona --</option>' +
+      S.clientesInformales.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+    if (actual) sel.value = actual;
+  }
+  return S.clientesInformales;
+}
+
+async function crearClienteInformal(){
+  const nombre = val('ciNombre');
+  if (!nombre){ alert('⚠️ Escribe el nombre del cliente'); return; }
+  try {
+    await db.collection('clientes_informales').add({ nombre, telefono: val('ciTelefono'), precios: {}, createdAt: ts() });
+    $('ciNombre').value = ''; $('ciTelefono').value = '';
+    flash('adminMsg', `✅ Cliente informal "${esc(nombre)}" agregado`);
+    await cargarClientesInformales();
+    renderClientesInformales();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function renderClientesInformales(){
+  const box = $('ciList');
+  if (!box) return;
+  if (!S.clientesInformales.length) await cargarClientesInformales();
+  const cont = $('ciContador');
+  if (cont) cont.textContent = `(${S.clientesInformales.length})`;
+  if (!S.clientesInformales.length){
+    box.innerHTML = '<p style="color:var(--gris);font-size:13.5px">Aún no hay clientes informales.</p>';
+    return;
+  }
+  box.innerHTML = S.clientesInformales.map(c => `
+    <div class="item-card">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
+        <strong>🧾 ${esc(c.nombre)}</strong>
+        <span style="color:var(--gris);font-size:12.5px">${esc(c.telefono || '')}</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" onclick="verVentasCliente('${c.id}')">📋 Sus ventas</button>
+        <button class="btn btn-sm btn-azul" onclick="verPreciosInformal('${c.id}')">💰 Sus precios</button>
+        <button class="btn btn-sm btn-rojo" onclick="eliminarClienteInformal('${c.id}','${esc(c.nombre)}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+
+async function eliminarClienteInformal(id, nombre){
+  if (!confirm(`¿Eliminar a "${nombre}"?\n\nSus ventas registradas se conservan.`)) return;
+  try {
+    await db.collection('clientes_informales').doc(id).delete();
+    await cargarClientesInformales();
+    renderClientesInformales();
+    flash('adminMsg', '🗑️ Cliente informal eliminado');
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+// ---- Precios propios del cliente informal ----
+async function verPreciosInformal(id){
+  const c = S.clientesInformales.find(x => x.id === id);
+  if (!c) return;
+  const precios = c.precios || {};
+  const conPrecio = Object.entries(precios).map(([pid, precio]) => {
+    const p = (S.productosAlmacen || S.productos).find(x => x.id === pid);
+    return { pid, precio, nombre: p?.nombre || '(producto eliminado)', codigo: p?.codigo || '' };
+  });
+  openOverlay(`
+    <h2 style="margin-bottom:6px">💰 Precios de ${esc(c.nombre)}</h2>
+    <p style="color:var(--gris);font-size:13.5px;margin-bottom:12px">Precios propios para este cliente. Si un producto no está aquí, se usa el precio del catálogo.</p>
+    <div class="form-group"><label>Agregar producto</label>
+      <input type="text" id="piBuscar" placeholder="Busca el producto..." oninput="filterPiProductos('${id}')">
+      <div id="piResultados"></div>
+    </div>
+    <div id="piLista">${conPrecio.length ? conPrecio.map(x => `
+      <div class="item-card" style="padding:10px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <span><strong>${esc(x.nombre)}</strong>${x.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-size:11.5px;font-weight:700">${esc(x.codigo)}</span>` : ''}</span>
+          <span style="display:flex;gap:6px;align-items:center">
+            <strong style="color:var(--v-osc)">${money(x.precio)}</strong>
+            <button class="btn btn-sm btn-rojo" onclick="quitarPrecioInformal('${id}','${x.pid}')">🗑️</button>
+          </span>
+        </div>
+      </div>`).join('') : '<p style="color:var(--gris);font-size:13.5px">Sin precios propios todavía.</p>'}</div>
+    <button class="btn btn-gris btn-block" style="margin-top:12px" onclick="closeOverlay()">Cerrar</button>`);
+}
+
+function filterPiProductos(clienteId){
+  const q = val('piBuscar').toLowerCase();
+  const box = $('piResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const lista = (S.productosAlmacen || S.productos).filter(p => p.categoria !== 'servicios');
+  const matches = buscarParecidos(q, lista, p => `${p.nombre} ${p.codigo}`, 6);
+  box.innerHTML = matches.map(p => `
+    <div style="padding:9px;border:1px solid var(--linea);border-radius:8px;margin-top:6px;cursor:pointer;background:#fff"
+      onclick="agregarPrecioInformal('${clienteId}','${p.id}')">
+      <strong>${esc(p.nombre)}</strong> · ${money(p.precioBase || 0)}
+    </div>`).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+async function agregarPrecioInformal(clienteId, prodId){
+  const p = (S.productosAlmacen || S.productos).find(x => x.id === prodId);
+  const nuevo = prompt(`Precio de "${p?.nombre}" para este cliente:`, p?.precioBase || '');
+  if (nuevo === null) return;
+  const precio = parseFloat(String(nuevo).replace(/[^\d.]/g, ''));
+  if (isNaN(precio) || precio <= 0){ alert('⚠️ Precio no válido'); return; }
+  try {
+    await db.collection('clientes_informales').doc(clienteId).update({ [`precios.${prodId}`]: precio });
+    await cargarClientesInformales();
+    verPreciosInformal(clienteId);
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function quitarPrecioInformal(clienteId, prodId){
+  try {
+    await db.collection('clientes_informales').doc(clienteId).update({ [`precios.${prodId}`]: firebase.firestore.FieldValue.delete() });
+    await cargarClientesInformales();
+    verPreciosInformal(clienteId);
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+// ---- Formulario de venta ----
+async function viSeleccionarCliente(){
+  S.viProductos = [];
+  renderViProductos();
+  const id = val('viCliente');
+  const campo = $('viNumero'), hint = $('viNumeroHint');
+  if (!id){ campo.value = ''; hint.textContent = 'Elige primero el cliente'; return; }
+  let ultimo = 0;
+  try {
+    const snap = await db.collection('ventas_informales').where('clienteId', '==', id).get();
+    snap.docs.forEach(d => { const n = parseInt(d.data().numero); if (!isNaN(n) && n > ultimo) ultimo = n; });
+  } catch (e){}
+  campo.value = String(ultimo + 1).padStart(4, '0');
+  hint.textContent = ultimo ? `Última venta con este cliente: ${String(ultimo).padStart(4, '0')}` : 'Primera venta con este cliente';
+}
+
+function precioInformalDe(prodId){
+  const c = S.clientesInformales.find(x => x.id === val('viCliente'));
+  return c?.precios?.[prodId];
+}
+
+function filterViProductos(){
+  const q = val('viProdBuscar').toLowerCase();
+  const box = $('viProdResultados');
+  if (q.length < 2){ box.innerHTML = ''; return; }
+  const iconos = { insumos: '🧪', repuestos: '🔩', servicios: '🛠️', equipos: '🖨️', accesorios: '🔌', reparaciones: '🔧' };
+  const matches = buscarParecidos(q, S.productos, p => `${p.nombre} ${p.codigo}`, 8);
+  box.innerHTML = matches.map(p => {
+    const esp = precioInformalDe(p.id);
+    const precio = esp ?? (p.precioBase || 0);
+    return `<div style="padding:10px;border:1px solid var(--linea);border-radius:8px;margin-top:6px;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="addViProducto('${p.id}')">
+      <span>${iconos[p.categoria] || '📦'} <strong>${esc(p.nombre)}</strong>${p.codigo ? ` <span style="background:var(--v-claro);color:var(--v-prof);border-radius:6px;padding:1px 6px;font-weight:700;font-size:11.5px">${esc(p.codigo)}</span>` : ''}</span>
+      <strong style="color:var(--v-osc);white-space:nowrap">${money(precio)}${esp ? ' ⭐' : ''}</strong>
+    </div>`;
+  }).join('') || '<p style="color:var(--gris);font-size:13px;padding:6px">Sin coincidencias</p>';
+}
+
+function addViProducto(prodId){
+  const p = S.productos.find(x => x.id === prodId);
+  if (!p) return;
+  const esp = precioInformalDe(p.id);
+  S.viProductos.push({ id: p.id, nombre: p.nombre, codigo: p.codigo || '', cantidad: 1, precio: esp ?? (p.precioBase || 0), especial: esp != null });
+  $('viProdBuscar').value = ''; $('viProdResultados').innerHTML = '';
+  renderViProductos();
+}
+
+function setViItem(i, campo, valor){
+  const n = parseFloat(valor);
+  S.viProductos[i][campo] = campo === 'cantidad' ? Math.max(1, parseInt(valor) || 1) : Math.max(0, n || 0);
+  renderViProductos();
+}
+function quitarViItem(i){ S.viProductos.splice(i, 1); renderViProductos(); }
+
+function renderViProductos(){
+  const box = $('viProductos');
+  if (!box) return;
+  if (!S.viProductos.length){ box.innerHTML = ''; return; }
+  const total = S.viProductos.reduce((s, it) => s + it.cantidad * it.precio, 0);
+  box.innerHTML = `<table class="mini" style="margin-bottom:12px">
+    <tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>
+    ${S.viProductos.map((it, i) => `<tr>
+      <td>${esc(it.nombre)}</td>
+      <td><input type="number" min="1" value="${it.cantidad}" style="width:60px;padding:5px;border:1px solid var(--linea);border-radius:6px" onchange="setViItem(${i},'cantidad',this.value)"></td>
+      <td><input type="number" min="0" step="any" value="${it.precio}" style="width:95px;padding:5px;border:1px solid var(--linea);border-radius:6px${it.especial ? ';background:#f4fbee;border-color:var(--v-medio);font-weight:700' : ''}" onchange="setViItem(${i},'precio',this.value)"></td>
+      <td>${money(it.cantidad * it.precio)}</td>
+      <td><button class="btn btn-sm btn-rojo" onclick="quitarViItem(${i})">✕</button></td>
+    </tr>`).join('')}
+    <tr><td colspan="3" style="text-align:right"><strong>TOTAL</strong></td><td colspan="2"><strong style="color:var(--v-osc)">${money(total)}</strong></td></tr>
+  </table>`;
+}
+
+async function crearVentaInformal(){
+  const clienteId = val('viCliente');
+  if (!clienteId){ alert('⚠️ Selecciona el cliente'); return; }
+  if (!S.viProductos.length){ alert('⚠️ Agrega al menos un producto'); return; }
+  const numero = val('viNumero');
+  if (!numero){ alert('⚠️ Escribe el número de venta'); return; }
+  const btn = $('btnCrearVi'); btn.disabled = true; btn.textContent = '⏳ Registrando...';
+  try {
+    const cliente = S.clientesInformales.find(c => c.id === clienteId);
+    const total = S.viProductos.reduce((s, it) => s + it.cantidad * it.precio, 0);
+    const venta = {
+      clienteId, clienteNombre: cliente?.nombre || '', numero: parseInt(numero),
+      productos: S.viProductos.map(it => ({ id: it.id, nombre: it.nombre, codigo: it.codigo, cantidad: it.cantidad, precio: it.precio })),
+      total, elaboradoPor: S.perfilNombre || S.usuario?.email || '', createdAt: ts()
+    };
+    const docRef = await db.collection('ventas_informales').add(venta);
+    registrarSalidasInventario(S.viProductos, `Venta informal #${numero} · ${venta.clienteNombre}`, docRef.id);
+    flash('ventasMsg', `✅ Venta informal #${numero} registrada — ${money(total)}`);
+    S.viProductos = []; renderViProductos();
+    $('viProdBuscar').value = '';
+    viSeleccionarCliente();
+    loadVentasInformales();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+  btn.disabled = false; btn.textContent = '🧾 Registrar Venta';
+}
+
+async function loadVentasInformales(){
+  const box = $('viList');
+  if (!box) return;
+  box.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const snap = await db.collection('ventas_informales').get();
+    llenarSelectorMes('mesVi', 'vi', snap.docs.map(d => isoDe(d.data().createdAt).slice(0, 7)));
+    const docs = snap.docs
+      .filter(d => filtroMes('vi', isoDe(d.data().createdAt)))
+      .sort((a, b) => (b.data().numero || 0) - (a.data().numero || 0)).slice(0, 60);
+    if (!docs.length){ box.innerHTML = '<p style="text-align:center;color:var(--gris);padding:14px">Sin ventas informales este mes</p>'; return; }
+    box.innerHTML = docs.map(d => {
+      const v = d.data();
+      return `<div class="item-card">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <strong>#${String(v.numero).padStart(4, '0')} · ${esc(v.clienteNombre)}</strong>
+          <strong style="color:var(--v-osc)">${money(v.total || 0)}</strong>
+        </div>
+        <p style="font-size:13px;color:var(--gris);margin-top:5px">${(v.productos || []).map(p => `${p.cantidad} × ${esc(p.nombre)}`).join(' · ')}</p>
+        <p style="font-size:12px;color:var(--gris-2);margin-top:3px">${v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-CO') : ''}${v.elaboradoPor ? ' · ' + esc(v.elaboradoPor) : ''}</p>
+        <button class="btn btn-sm btn-rojo" style="margin-top:7px" onclick="eliminarVentaInformal('${d.id}')">🗑️ Eliminar</button>
+      </div>`;
+    }).join('');
+  } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
+}
+
+async function eliminarVentaInformal(id){
+  if (!confirm('¿Eliminar esta venta informal?\n\nSe devolverán los productos al inventario.')) return;
+  try {
+    await revertirSalidasInventario(id);
+    await db.collection('ventas_informales').doc(id).delete();
+    flash('ventasMsg', '🗑️ Venta eliminada e inventario revertido');
+    loadVentasInformales();
+  } catch (e){ alert('❌ Error: ' + e.message); }
+}
+
+async function verVentasCliente(clienteId){
+  const c = S.clientesInformales.find(x => x.id === clienteId);
+  try {
+    const snap = await db.collection('ventas_informales').where('clienteId', '==', clienteId).get();
+    const ventas = snap.docs.map(d => d.data()).sort((a, b) => (b.numero || 0) - (a.numero || 0));
+    const total = ventas.reduce((s, v) => s + (v.total || 0), 0);
+    openOverlay(`
+      <h2 style="margin-bottom:6px">📋 Ventas de ${esc(c?.nombre || '')}</h2>
+      <p style="color:var(--gris);font-size:13.5px;margin-bottom:12px">${ventas.length} venta(s) · Total acumulado: <strong style="color:var(--v-osc)">${money(total)}</strong></p>
+      ${ventas.length ? ventas.map(v => `
+        <div class="item-card" style="padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+            <strong>#${String(v.numero).padStart(4, '0')}</strong>
+            <strong style="color:var(--v-osc)">${money(v.total || 0)}</strong>
+          </div>
+          <p style="font-size:12.5px;color:var(--gris);margin-top:4px">${(v.productos || []).map(p => `${p.cantidad} × ${esc(p.nombre)}`).join(' · ')}</p>
+        </div>`).join('') : '<p style="color:var(--gris)">Sin ventas registradas.</p>'}
+      <button class="btn btn-gris btn-block" style="margin-top:12px" onclick="closeOverlay()">Cerrar</button>`);
+  } catch (e){ alert('❌ Error: ' + e.message); }
 }
 
 async function loadClientesTab(){
