@@ -6780,7 +6780,6 @@ async function loadClientEquiposAdmin(clientId){
     const html = propios.length ? propios.map(tarjeta).join('')
       : '<p style="color:var(--gris);font-size:13px">Sin equipos registrados</p>';
 
-    // Equipos que se guardaron sin quedar vinculados a ningún cliente
     box.innerHTML = html;
   } catch (e){ box.innerHTML = `<p class="msg msg-error">Error: ${esc(e.message)}</p>`; }
 }
